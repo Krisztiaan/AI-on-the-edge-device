@@ -48,6 +48,9 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
 #include "mbedtls/sha256.h"
+#include <fstream>
+
+#include "third_party/ed25519-donna/ed25519.h"
 
 /*an ota data write buffer ready to write to the flash*/
 static char ota_write_data[SERVER_OTA_SCRATCH_BUFSIZE + 1] = { 0 };
@@ -151,6 +154,94 @@ static esp_err_t http_get_to_string(const std::string &url, std::string &out, si
     esp_http_client_cleanup(client);
 
     return ESP_OK;
+}
+
+static std::string trim_ascii_whitespace(const std::string &s)
+{
+    size_t start = 0;
+    while (start < s.size() && (s[start] == ' ' || s[start] == '\r' || s[start] == '\n' || s[start] == '\t')) {
+        start++;
+    }
+
+    size_t end = s.size();
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\r' || s[end - 1] == '\n' || s[end - 1] == '\t')) {
+        end--;
+    }
+
+    return s.substr(start, end - start);
+}
+
+static bool read_file_trimmed(const std::string &path, std::string &out)
+{
+    out.clear();
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) {
+        return false;
+    }
+
+    std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+    out = trim_ascii_whitespace(content);
+    return true;
+}
+
+static bool load_ota_manifest_pubkey_ed25519(ed25519_public_key out_pk)
+{
+    static const char *kPath = "/sdcard/config/ota_pubkey_ed25519.hex";
+
+    std::string hex;
+    if (!read_file_trimmed(kPath, hex)) {
+        return false;
+    }
+
+    uint8_t tmp[32];
+    if (!hex_to_bytes(hex, tmp, sizeof(tmp))) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, std::string("Invalid Ed25519 public key hex in ") + kPath);
+        return false;
+    }
+
+    memcpy(out_pk, tmp, sizeof(tmp));
+    return true;
+}
+
+static bool verify_manifest_signature_if_configured(const std::string &manifest_url, const std::string &manifest_json, std::string &out_error)
+{
+    out_error.clear();
+
+    ed25519_public_key pk;
+    if (!load_ota_manifest_pubkey_ed25519(pk)) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Manifest signature verification is disabled (missing /sdcard/config/ota_pubkey_ed25519.hex)");
+        }
+        return true;
+    }
+
+    const std::string sig_url = manifest_url + ".sig";
+    std::string sig_hex;
+    esp_err_t err = http_get_to_string(sig_url, sig_hex, 1024);
+    if (err != ESP_OK) {
+        out_error = "Failed to fetch manifest signature";
+        return false;
+    }
+
+    sig_hex = trim_ascii_whitespace(sig_hex);
+    uint8_t sig_bytes[64];
+    if (!hex_to_bytes(sig_hex, sig_bytes, sizeof(sig_bytes))) {
+        out_error = "Invalid manifest signature format";
+        return false;
+    }
+
+    ed25519_signature sig;
+    memcpy(sig, sig_bytes, sizeof(sig));
+
+    const int ok = ed25519_sign_open((const unsigned char *)manifest_json.data(), manifest_json.size(), pk, sig);
+    if (ok != 0) {
+        out_error = "Manifest signature verification failed";
+        return false;
+    }
+
+    return true;
 }
 
 static esp_err_t http_download_to_file_with_sha256(const std::string &url,
@@ -751,6 +842,13 @@ esp_err_t handler_ota_update(httpd_req_t *req)
             return ESP_OK;
         }
 
+        std::string sig_err;
+        if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Manifest signature error: " + sig_err);
+            send_bad_gateway(req, sig_err.c_str());
+            return ESP_OK;
+        }
+
         std::string update_url;
         std::string update_sha256;
         if (!parse_manifest_update_zip(manifest, update_url, update_sha256)) {
@@ -804,6 +902,13 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         esp_err_t err = http_get_to_string(manifest_url, manifest, 64 * 1024);
         if (err != ESP_OK) {
             send_bad_gateway(req, "Failed to fetch manifest");
+            return ESP_OK;
+        }
+
+        std::string sig_err;
+        if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Manifest signature error: " + sig_err);
+            send_bad_gateway(req, sig_err.c_str());
             return ESP_OK;
         }
 
