@@ -29,11 +29,13 @@
 #include "MainFlowControl.h"
 #include "server_file.h"
 #include "server_ota.h"
+#include <esp_ota_ops.h>
 #include "time_sntp.h"
 #include "configFile.h"
 #include "server_main.h"
 #include "server_camera.h"
 #include "basic_auth.h"
+#include <nvs.h>
 
 #ifdef ENABLE_MQTT
     #include "server_mqtt.h"
@@ -95,6 +97,66 @@ bool setCpuFrequency(void);
 static const char *TAG = "MAIN";
 
 #define MOUNT_POINT "/sdcard"
+
+static bool should_count_for_bootloop(esp_reset_reason_t reason)
+{
+    switch (reason) {
+        case ESP_RST_PANIC:
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static uint32_t bootloop_increment_and_get_count()
+{
+    nvs_handle_t handle;
+    if (nvs_open("bootloop", NVS_READWRITE, &handle) != ESP_OK) {
+        return 0;
+    }
+
+    uint32_t count = 0;
+    (void)nvs_get_u32(handle, "count", &count);
+    count++;
+    (void)nvs_set_u32(handle, "count", count);
+    (void)nvs_commit(handle);
+    nvs_close(handle);
+    return count;
+}
+
+static void bootloop_clear_count()
+{
+    nvs_handle_t handle;
+    if (nvs_open("bootloop", NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    (void)nvs_set_u32(handle, "count", 0);
+    (void)nvs_commit(handle);
+    nvs_close(handle);
+}
+
+static bool is_running_partition_pending_verify_main()
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    if (!running) return false;
+
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) != ESP_OK) {
+        return false;
+    }
+    return ota_state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+static void bootloop_clear_task(void *pvParameter)
+{
+    (void)pvParameter;
+    vTaskDelay(300000 / portTICK_PERIOD_MS);
+    bootloop_clear_count();
+    vTaskDelete(NULL);
+}
 
 bool Init_NVS_SDCard()
 {
@@ -245,6 +307,29 @@ extern "C" void app_main(void)
     // SD card: Create log directories (if not already existing)
     // ********************************************
     LogFile.CreateLogDirectories(); // mandatory for logging + image saving
+
+    // Bootloop detection / recovery
+    // ********************************************
+    if (should_count_for_bootloop(esp_reset_reason())) {
+        const uint32_t crash_boot_count = bootloop_increment_and_get_count();
+        if (crash_boot_count >= 3) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Detected repeated crashes/reboots (" + std::to_string(crash_boot_count) + "). Entering recovery mode.");
+
+            if (is_running_partition_pending_verify_main()) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Running firmware is pending verify; rolling back to previous firmware");
+                esp_ota_mark_app_invalid_rollback_and_reboot();
+                return;
+            }
+
+            #ifdef ENABLE_SOFTAP
+                StartSafeModeAP();
+            #else
+                while (1) { vTaskDelay(1000 / portTICK_PERIOD_MS); }
+            #endif
+        }
+    }
+
+    xTaskCreate(&bootloop_clear_task, "bootloop_clear", 2048, NULL, 1, NULL);
 
     // ********************************************
     // Highlight start of logfile logging
@@ -530,6 +615,7 @@ extern "C" void app_main(void)
     register_server_main_flow_task_uri(server);
     register_server_file_uri(server, "/sdcard");
     register_server_ota_sdcard_uri(server);
+    StartOTAVerifyMonitor();
     #ifdef ENABLE_MQTT
         register_server_mqtt_uri(server);
     #endif //ENABLE_MQTT
