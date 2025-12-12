@@ -139,6 +139,10 @@ The latest available version can be found on the [Releases page](https://github.
 ## Flashing the ESP32 💾
 Initially, you will have to flash the ESP32 via a USB connection. Later updates are possible directly over the air (OTA using Wi-Fi).
 
+This fork also supports an “online update” flow via a GitHub Pages `manifest.json` (and optional on-demand model downloads). If you enable manifest signing:
+- Put the Ed25519 public key (32-byte, hex) in `/sdcard/config/ota_pubkey_ed25519.hex`.
+- Configure GitHub Actions secret `OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64` to publish `manifest.json.sig`.
+
 There are different ways to flash your ESP32:
 - The preferred way is the [Web Installer and Console](https://jomjol.github.io/AI-on-the-edge-device/index.html), a browser-based tool to flash the ESP32 and extract the log over USB:  
   ![](images/web-installer.png)

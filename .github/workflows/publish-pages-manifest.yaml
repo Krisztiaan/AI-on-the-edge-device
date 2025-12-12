@@ -73,7 +73,26 @@ jobs:
           <title>AIOTED Manifest</title>
           <h1>AIOTED Manifest</h1>
           <p>Download: <a href="manifest.json">manifest.json</a></p>
+          <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
 HTML
+
+      - name: Sign manifest (Ed25519)
+        if: ${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 }}" | base64 -d > /tmp/ed25519_signing_key.pem
+          chmod 600 /tmp/ed25519_signing_key.pem
+
+          openssl pkeyutl -sign -inkey /tmp/ed25519_signing_key.pem -rawin -in pages/manifest.json -out pages/manifest.json.sig.bin
+
+          python3 - <<'PY'
+          import binascii
+          sig = open("pages/manifest.json.sig.bin", "rb").read()
+          open("pages/manifest.json.sig", "w", encoding="utf-8").write(binascii.hexlify(sig).decode("ascii") + "\\n")
+          PY
+
+          rm -f /tmp/ed25519_signing_key.pem pages/manifest.json.sig.bin
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
