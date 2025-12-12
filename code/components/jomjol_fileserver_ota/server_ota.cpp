@@ -27,6 +27,7 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 #include "errno.h"
 
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "MainFlowControl.h"
 #include "server_file.h"
@@ -157,6 +158,8 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
                                                    const std::string &expected_sha256_hex,
                                                    size_t max_bytes)
 {
+    const std::string tmp_path = dest_path + ".part";
+
     esp_http_client_config_t cfg = {};
     cfg.url = url.c_str();
     cfg.method = HTTP_METHOD_GET;
@@ -168,7 +171,7 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
         return ESP_FAIL;
     }
 
-    FILE *fp = fopen(dest_path.c_str(), "wb");
+    FILE *fp = fopen(tmp_path.c_str(), "wb");
     if (!fp) {
         esp_http_client_cleanup(client);
         return ESP_FAIL;
@@ -182,6 +185,7 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
     if (err != ESP_OK) {
         fclose(fp);
         esp_http_client_cleanup(client);
+        unlink(tmp_path.c_str());
         return err;
     }
 
@@ -221,18 +225,39 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
 
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
-    fclose(fp);
 
     if (err != ESP_OK) {
-        unlink(dest_path.c_str());
+        fclose(fp);
+        unlink(tmp_path.c_str());
         return err;
     }
 
     const std::string actual_hex = bytes_to_hex(digest, sizeof(digest));
     if (!expected_sha256_hex.empty() && actual_hex != expected_sha256_hex) {
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "SHA256 mismatch for " + dest_path + " expected=" + expected_sha256_hex + " actual=" + actual_hex);
-        unlink(dest_path.c_str());
+        fclose(fp);
+        unlink(tmp_path.c_str());
         return ESP_ERR_INVALID_CRC;
+    }
+
+    if (fflush(fp) != 0) {
+        fclose(fp);
+        unlink(tmp_path.c_str());
+        return ESP_FAIL;
+    }
+    if (fsync(fileno(fp)) != 0) {
+        fclose(fp);
+        unlink(tmp_path.c_str());
+        return ESP_FAIL;
+    }
+    fclose(fp);
+
+    if (rename(tmp_path.c_str(), dest_path.c_str()) != 0) {
+        unlink(dest_path.c_str());
+        if (rename(tmp_path.c_str(), dest_path.c_str()) != 0) {
+            unlink(tmp_path.c_str());
+            return ESP_FAIL;
+        }
     }
 
     return ESP_OK;
