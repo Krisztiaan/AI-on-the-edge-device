@@ -758,17 +758,8 @@ string ClassFlowPostProcessing::ShiftDecimal(string in, int _decShift) {
 }
 
 bool ClassFlowPostProcessing::doFlow(string zwtime) {
-    string result = "";
-    string digit = "";
-    string analog = "";
     string zwvalue;
-    string zw;
-    time_t imagetime = 0;
-    string rohwert;
-
-    // Update decimal point, as the decimal places can also change when changing from CNNType Auto --> xyz:
-
-    imagetime = flowTakeImage->getTimeImageTaken();
+    time_t imagetime = flowTakeImage->getTimeImageTaken();
 	
     if (imagetime == 0) {
         time(&imagetime);
@@ -794,6 +785,7 @@ bool ClassFlowPostProcessing::doFlow(string zwtime) {
         // double LastValueTimeDifference = difftime(imagetime, NUMBERS[j]->timeStampLastValue);         // in seconds
         double LastPreValueTimeDifference = difftime(imagetime, NUMBERS[j]->timeStampLastPreValue);   // in seconds
 
+        // Update decimal point, as the decimal places can also change when changing from CNNType Auto --> xyz:
         UpdateNachkommaDecimalShift();
 
         int previous_value = -1;
@@ -884,12 +876,21 @@ bool ClassFlowPostProcessing::doFlow(string zwtime) {
 
         if (NUMBERS[j]->checkDigitIncreaseConsistency) {
             if (flowDigit) {
+#ifdef DEBUG_DETAIL_ON
+                LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Before checkDigitConsistency: value=" + std::to_string(NUMBERS[j]->Value));
+#endif
                 NUMBERS[j]->Value = checkDigitConsistency(NUMBERS[j]->Value, NUMBERS[j]->DecimalShift, NUMBERS[j]->analog_roi != NULL, NUMBERS[j]->PreValue);
+#ifdef DEBUG_DETAIL_ON
+                LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "After checkDigitConsistency: value=" + std::to_string(NUMBERS[j]->Value));
+#endif
             }
             else {
-                #ifdef SERIAL_DEBUG
-                    ESP_LOGD(TAG, "checkDigitIncreaseConsistency = true - no digit numbers defined!");
-                #endif
+#ifdef SERIAL_DEBUG
+                ESP_LOGD(TAG, "checkDigitIncreaseConsistency = true - no digit numbers defined!");
+#endif
+#ifdef DEBUG_DETAIL_ON
+                LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "checkDigitIncreaseConsistency = true - no digit numbers defined!");
+#endif
             }
         }
 
@@ -1128,6 +1129,9 @@ float ClassFlowPostProcessing::checkDigitConsistency(double input, int _decilams
     #ifdef SERIAL_DEBUG
         ESP_LOGD(TAG, "checkDigitConsistency: pot=%d, decimalshift=%d", pot, _decilamshift);
     #endif
+#ifdef DEBUG_DETAIL_ON
+    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "checkDigitConsistency: pot=" + std::to_string(pot) + ", decimalshift=" + std::to_string(_decilamshift));
+#endif
 	
     pot_max = ((int) log10(input)) + 1;
 	
@@ -1159,6 +1163,9 @@ float ClassFlowPostProcessing::checkDigitConsistency(double input, int _decilams
         #ifdef SERIAL_DEBUG
             ESP_LOGD(TAG, "checkDigitConsistency: input=%f", input);
         #endif
+#ifdef DEBUG_DETAIL_ON
+		LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "checkDigitConsistency: input=" + std::to_string(input));
+#endif
 			
         pot++;
     }
