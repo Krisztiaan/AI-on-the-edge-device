@@ -46,6 +46,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download manual_setup zip (for firmware.bin)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          gh release download "$tag" -R "${{ github.repository }}" -p "*__manual-setup__${tag}.zip"
+          ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build pages content (manifest + models)
         shell: bash
         run: |
@@ -60,10 +70,25 @@ jobs:
           cp sd-card/config/*.tfl pages/models/ 2>/dev/null || true
           cp sd-card/config/*.tflite pages/models/ 2>/dev/null || true
 
+          manual_setup_zip="$(ls *__manual-setup__*.zip 2>/dev/null || true)"
+          if [[ -z "$manual_setup_zip" ]]; then
+            manual_setup_zip="$(ls *__manual-setup__${tag}.zip | head -n 1)"
+          fi
+          rm -rf /tmp/manual_setup_extract
+          mkdir -p /tmp/manual_setup_extract
+          unzip -q "$manual_setup_zip" -d /tmp/manual_setup_extract
+          if [[ -f /tmp/manual_setup_extract/firmware.bin ]]; then
+            cp -f /tmp/manual_setup_extract/firmware.bin pages/firmware.bin
+          else
+            echo "firmware.bin not found in manual_setup zip"
+            exit 1
+          fi
+
           python3 tools/github-pages/generate_manifest.py \
             --repo "${{ github.repository }}" \
             --tag "$tag" \
             --update-file "$update_zip" \
+            --firmware-file pages/firmware.bin \
             --models-dir pages/models \
             --out pages/manifest.json
 
@@ -73,6 +98,7 @@ jobs:
           <title>AIOTED Manifest</title>
           <h1>AIOTED Manifest</h1>
           <p>Download: <a href="manifest.json">manifest.json</a></p>
+          <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
           <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
 HTML
 

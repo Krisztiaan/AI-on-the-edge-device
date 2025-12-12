@@ -25,6 +25,7 @@ def main() -> int:
     ap.add_argument("--repo", required=True, help="owner/repo")
     ap.add_argument("--tag", required=True, help="release tag, e.g. v16.0.0")
     ap.add_argument("--update-file", required=True, help="path to the update zip on disk")
+    ap.add_argument("--firmware-file", required=False, help="path to firmware.bin on disk (optional)")
     ap.add_argument("--models-dir", required=True, help="directory containing model files to publish")
     ap.add_argument("--out", required=True, help="output manifest.json path")
     args = ap.parse_args()
@@ -46,6 +47,17 @@ def main() -> int:
         "size": update_file.stat().st_size,
     }
 
+    firmware = None
+    if args.firmware_file:
+        fw_file = Path(args.firmware_file)
+        if fw_file.exists():
+            firmware = {
+                "tag": tag,
+                "url": f"{pages_base}/firmware.bin",
+                "sha256": sha256_file(fw_file),
+                "size": fw_file.stat().st_size,
+            }
+
     models = []
     if models_dir.exists():
         for p in sorted(models_dir.iterdir()):
@@ -66,6 +78,7 @@ def main() -> int:
         "generated_at": generated_at,
         "repo": repo,
         "update": update,
+        "firmware": firmware,
         "models": models,
     }
 
@@ -76,4 +89,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
