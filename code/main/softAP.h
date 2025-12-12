@@ -17,6 +17,7 @@
 #include <esp_http_server.h>
 
 void CheckStartAPMode();
+void StartSafeModeAP();
 
 #endif  //SOFTAP_H
 

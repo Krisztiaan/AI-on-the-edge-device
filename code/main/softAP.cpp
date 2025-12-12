@@ -41,6 +41,7 @@
 
 bool isConfigINI = false;
 bool isWlanINI = false;
+static bool isSafeMode = false;
 
 static const char *TAG = "WIFI AP";
 
@@ -99,7 +100,11 @@ void wifi_init_softAP(void)
 void SendHTTPResponse(httpd_req_t *req)
 {
     std::string message = "<h1>AI-on-the-edge - BASIC SETUP</h1><p>This is an access point with a minimal server to setup the minimum required files and information on the device and the SD-card. ";
-    message += "This mode is always started if one of the following files is missing: /wlan.ini or the /config/config.ini.<p>";
+    message += "This mode is always started if one of the following files is missing: /wlan.ini or the /config/config.ini.";
+    if (isSafeMode) {
+        message += " <b>Safe mode</b> was activated due to repeated crashes/reboots.";
+    }
+    message += "<p>";
     message += "The setup is done in 3 steps: 1. upload full inital configuration (sd-card content), 2. store WLAN access information, 3. reboot (and connect to WLANs)<p><p>";
     message += "Please follow the below instructions.<p>";
     httpd_resp_send_chunk(req, message.c_str(), strlen(message.c_str()));
@@ -523,6 +528,19 @@ void CheckStartAPMode()
         while(1) { // wait until reboot within task_do_Update_ZIP
             vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
+    }
+}
+
+void StartSafeModeAP()
+{
+    isSafeMode = true;
+
+    ESP_LOGW(TAG, "Starting safe-mode access point for recovery");
+    StatusLED(AP_OR_OTA, 2, true);
+    wifi_init_softAP();
+    start_webserverAP();
+    while (1) {
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 

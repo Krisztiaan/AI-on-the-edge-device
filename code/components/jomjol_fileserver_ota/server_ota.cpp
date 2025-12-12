@@ -578,6 +578,87 @@ static bool diagnostic(void)
     return true;
 }
 
+static bool is_running_partition_pending_verify()
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    if (!running) {
+        return false;
+    }
+
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) != ESP_OK) {
+        return false;
+    }
+
+    return ota_state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+static TaskHandle_t ota_verify_task_handle = NULL;
+
+static void ota_verify_monitor_task(void *pvParameter)
+{
+    const int timeout_seconds = (int)(intptr_t)pvParameter;
+    const TickType_t delay = 1000 / portTICK_PERIOD_MS;
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "OTA: running image is pending verify; waiting up to " + std::to_string(timeout_seconds) +
+                                           "s before confirming");
+
+    bool saw_wifi = false;
+    for (int elapsed = 0; elapsed < timeout_seconds; elapsed++) {
+        if (getWIFIisConnected()) {
+            saw_wifi = true;
+            break;
+        }
+        vTaskDelay(delay);
+    }
+
+    if (!is_running_partition_pending_verify()) {
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "OTA: running image no longer pending verify; nothing to do");
+        ota_verify_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    const bool diagnostic_is_ok = diagnostic();
+    if (!diagnostic_is_ok) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA: diagnostics failed; rolling back to previous firmware");
+        esp_ota_mark_app_invalid_rollback_and_reboot();
+        ota_verify_task_handle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (saw_wifi) {
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "OTA: Wi-Fi connected; confirming new firmware");
+    } else {
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "OTA: Wi-Fi not connected within timeout; confirming new firmware anyway");
+    }
+
+    esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err != ESP_OK) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA: failed to mark app valid (" + std::string(esp_err_to_name(err)) + ")");
+    } else {
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "OTA: marked app valid; rollback canceled");
+    }
+
+    ota_verify_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+void StartOTAVerifyMonitor()
+{
+    if (!is_running_partition_pending_verify()) {
+        return;
+    }
+
+    if (ota_verify_task_handle != NULL) {
+        return;
+    }
+
+    static constexpr int kTimeoutSeconds = 180;
+    xTaskCreate(&ota_verify_monitor_task, "ota_verify", 4096, (void *)(intptr_t)kTimeoutSeconds, 5, &ota_verify_task_handle);
+}
+
 
 void CheckOTAUpdate(void)
 {
@@ -604,49 +685,8 @@ void CheckOTAUpdate(void)
     esp_partition_get_sha256(esp_ota_get_running_partition(), sha_256);
     print_sha256(sha_256, "SHA-256 for current firmware: ");
 
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    esp_ota_img_states_t ota_state;
-    esp_err_t res_stat_partition = esp_ota_get_state_partition(running, &ota_state);
-    switch (res_stat_partition)
-    {
-        case ESP_OK:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_OK");
-            if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-                if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-                    // run diagnostic function ...
-                    bool diagnostic_is_ok = diagnostic();
-                    if (diagnostic_is_ok) {
-                        ESP_LOGI(TAG, "Diagnostics completed successfully! Continuing execution...");
-                        esp_ota_mark_app_valid_cancel_rollback();
-                    } else {
-                        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Diagnostics failed! Start rollback to the previous version...");
-                        esp_ota_mark_app_invalid_rollback_and_reboot();
-                    }
-                }
-            }            
-            break;
-        case ESP_ERR_INVALID_ARG:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_INVALID_ARG");
-            break;
-        case ESP_ERR_NOT_SUPPORTED:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_NOT_SUPPORTED");
-            break;
-        case ESP_ERR_NOT_FOUND:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_NOT_FOUND");
-            break;
-    }
-    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-            // run diagnostic function ...
-            bool diagnostic_is_ok = diagnostic();
-            if (diagnostic_is_ok) {
-                ESP_LOGI(TAG, "Diagnostics completed successfully! Continuing execution...");
-                esp_ota_mark_app_valid_cancel_rollback();
-            } else {
-                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Diagnostics failed! Start rollback to the previous version...");
-                esp_ota_mark_app_invalid_rollback_and_reboot();
-            }
-        }
+    if (is_running_partition_pending_verify()) {
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "OTA: running image is pending verification; will confirm after web server start");
     }
 }
 
