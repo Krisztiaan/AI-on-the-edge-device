@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <cctype>
 
 #include "esp_log.h"
 #include "ClassLogFile.h"
@@ -60,6 +61,33 @@ std::string createNodeId(std::string &topic) {
     return (splitPos == std::string::npos) ? topic : topic.substr(splitPos + 1);
 }
 
+static std::string sanitizeHomeAssistantId(std::string value) {
+    std::string out;
+    out.reserve(value.size());
+
+    bool lastWasUnderscore = false;
+    for (unsigned char c : value) {
+        if (std::isalnum(c)) {
+            out.push_back((char)std::tolower(c));
+            lastWasUnderscore = false;
+        } else {
+            if (!lastWasUnderscore) {
+                out.push_back('_');
+                lastWasUnderscore = true;
+            }
+        }
+    }
+
+    while (!out.empty() && out.front() == '_') out.erase(out.begin());
+    while (!out.empty() && out.back() == '_') out.pop_back();
+
+    if (out.empty()) {
+        out = "aioted";
+    }
+
+    return out;
+}
+
 bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
     std::string name, std::string icon, std::string unit, std::string deviceClass, std::string stateClass, std::string entityCategory,
     int qos) {
@@ -72,6 +100,7 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
     std::string topicFull;
     std::string configTopic;
     std::string payload;
+    std::string component;
 
     configTopic = field;
 
@@ -80,6 +109,16 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
         name = group + " " + name;
     }    
 
+    if (field == "problem") { // Special case: Binary sensor which is based on error topic
+        component = "binary_sensor";
+    }
+    else if (field == "flowstart") { // Special case: Button
+        component = "button";
+    }
+    else {
+        component = "sensor";
+    }
+
     /** 
      * homeassistant needs the MQTT discovery topic according to the following structure:
      *      <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
@@ -87,21 +126,15 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
      * This means a maintopic "home/test/watermeter" is transformed to the discovery topic "homeassistant/sensor/watermeter/..."
     */
     std::string node_id = createNodeId(maintopic);
-    if (field == "problem") { // Special case: Binary sensor which is based on error topic
-        topicFull = "homeassistant/binary_sensor/" + node_id + "/" + configTopic + "/config";
-    }
-    else if (field == "flowstart") { // Special case: Button
-        topicFull = "homeassistant/button/" + node_id + "/" + configTopic + "/config";
-    }
-    else {
-        topicFull = "homeassistant/sensor/" + node_id + "/" + configTopic + "/config";
-    }
+    topicFull = "homeassistant/" + component + "/" + node_id + "/" + configTopic + "/config";
 
     /* See https://www.home-assistant.io/docs/mqtt/discovery/ */
+    std::string object_id = maintopic + "_" + configTopic;
     payload = string("{")  +
         "\"~\": \"" + maintopic + "\","  +
         "\"unique_id\": \"" + maintopic + "-" + configTopic + "\","  +
-        "\"object_id\": \"" + maintopic + "_" + configTopic + "\","  + // This used to generate the Entity ID
+        "\"object_id\": \"" + object_id + "\","  + // Default entity ID; required for HA <= 2025.10
+        "\"default_entity_id\": \"" + component + "." + sanitizeHomeAssistantId(object_id) + "\"," + // Default entity ID; required in HA >=2026.4
         "\"name\": \"" + name + "\","  +
         "\"icon\": \"mdi:" + icon + "\",";        
 
