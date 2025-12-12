@@ -58,6 +58,19 @@
     </form>
     
 
+    <hr>
+
+    <h3>Online Update / Models</h3>
+    <p>Download updates and models using an HTTPS manifest (e.g. hosted on GitHub Pages).</p>
+    <p style="font-family:monospace">Example: https://&lt;owner&gt;.github.io/&lt;repo&gt;/manifest.json</p>
+    <label for="manifest_url">Manifest URL:</label>
+    <input type="text" id="manifest_url" style="width:660px" placeholder="https://krisztiaan.github.io/AI-on-the-edge-device/manifest.json"><br><br>
+    <button class="button" id="download_update_btn" type="button" onclick="downloadUpdateFromManifest()">Download Update (ZIP)</button>
+    <br><br>
+    <label for="model_name">Model filename:</label>
+    <input type="text" id="model_name" style="width:660px" placeholder="dig-class100-0182-s2_q.tflite"><br><br>
+    <button class="button" id="download_model_btn" type="button" onclick="downloadModelFromManifest()">Download Model</button>
+
 
     <script language="JavaScript">
         var domainname = getDomainname();
@@ -68,6 +81,55 @@
         * value is same as that set in server_file.c */
         var MAX_FILE_SIZE = 8000*1024;
         var MAX_FILE_SIZE_STR = "8MB";
+
+        function getManifestUrl() {
+            const v = document.getElementById("manifest_url").value.trim();
+            if (v !== "") return v;
+            return document.getElementById("manifest_url").placeholder;
+        }
+
+        function downloadUpdateFromManifest() {
+            document.getElementById("download_update_btn").disabled = true;
+            const manifest = encodeURIComponent(getManifestUrl());
+            document.getElementById("status").innerText = "Status: Downloading update from manifest...";
+
+            const url = domainname + "/ota?task=download_update&manifest=" + manifest;
+            fetch(url).then(async (r) => {
+                const t = await r.text();
+                if (!r.ok) throw new Error(t);
+                if (t.startsWith("reboot")) {
+                    document.getElementById("status").innerText = "Status: Downloaded. Rebooting to install...";
+                    doRebootAfterUpdate();
+                } else {
+                    document.getElementById("status").innerText = "Status: " + t;
+                }
+            }).catch((e) => {
+                document.getElementById("status").innerText = "Status: Online update failed";
+                firework.launch('Online update failed: ' + e, 'danger', 30000);
+            }).finally(() => {
+                document.getElementById("download_update_btn").disabled = false;
+            });
+        }
+
+        function downloadModelFromManifest() {
+            document.getElementById("download_model_btn").disabled = true;
+            const manifest = encodeURIComponent(getManifestUrl());
+            const modelName = encodeURIComponent(document.getElementById("model_name").value.trim());
+            document.getElementById("status").innerText = "Status: Downloading model from manifest...";
+
+            const url = domainname + "/ota?task=download_model&manifest=" + manifest + "&model=" + modelName;
+            fetch(url).then(async (r) => {
+                const t = await r.text();
+                if (!r.ok) throw new Error(t);
+                document.getElementById("status").innerText = "Status: Model downloaded";
+                firework.launch('Model downloaded.', 'success', 5000);
+            }).catch((e) => {
+                document.getElementById("status").innerText = "Status: Model download failed";
+                firework.launch('Model download failed: ' + e, 'danger', 30000);
+            }).finally(() => {
+                document.getElementById("download_model_btn").disabled = false;
+            });
+        }
         
         function validate_file() {
             document.getElementById("start_OTA_button").disabled = true;
