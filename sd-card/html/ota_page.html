@@ -67,6 +67,8 @@
     <input type="text" id="manifest_url" style="width:660px" placeholder="https://krisztiaan.github.io/AI-on-the-edge-device/manifest.json"><br><br>
     <button class="button" id="download_update_btn" type="button" onclick="downloadUpdateFromManifest()">Download Update (ZIP)</button>
     <br><br>
+    <button class="button" id="download_firmware_btn" type="button" onclick="downloadFirmwareFromManifest()">Download Firmware (streaming)</button>
+    <br><br>
     <label for="model_name">Model filename:</label>
     <input type="text" id="model_name" style="width:660px" placeholder="dig-class100-0182-s2_q.tflite"><br><br>
     <button class="button" id="download_model_btn" type="button" onclick="downloadModelFromManifest()">Download Model</button>
@@ -108,6 +110,29 @@
                 firework.launch('Online update failed: ' + e, 'danger', 30000);
             }).finally(() => {
                 document.getElementById("download_update_btn").disabled = false;
+            });
+        }
+
+        function downloadFirmwareFromManifest() {
+            document.getElementById("download_firmware_btn").disabled = true;
+            const manifest = encodeURIComponent(getManifestUrl());
+            document.getElementById("status").innerText = "Status: Downloading firmware (streaming) from manifest...";
+
+            const url = domainname + "/ota?task=download_firmware&manifest=" + manifest;
+            fetch(url).then(async (r) => {
+                const t = await r.text();
+                if (!r.ok) throw new Error(t);
+                if (t.startsWith("reboot")) {
+                    document.getElementById("status").innerText = "Status: Downloaded. Rebooting to install...";
+                    doRebootAfterUpdate();
+                } else {
+                    document.getElementById("status").innerText = "Status: " + t;
+                }
+            }).catch((e) => {
+                document.getElementById("status").innerText = "Status: Firmware update failed";
+                firework.launch('Firmware update failed: ' + e, 'danger', 30000);
+            }).finally(() => {
+                document.getElementById("download_firmware_btn").disabled = false;
             });
         }
 

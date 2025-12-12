@@ -375,6 +375,27 @@ static bool parse_manifest_update_zip(const std::string &manifest_json, std::str
     return ok;
 }
 
+static bool parse_manifest_firmware_bin(const std::string &manifest_json, std::string &out_url, std::string &out_sha256)
+{
+    out_url.clear();
+    out_sha256.clear();
+
+    cJSON *root = cJSON_Parse(manifest_json.c_str());
+    if (!root) return false;
+
+    cJSON *fw = cJSON_GetObjectItemCaseSensitive(root, "firmware");
+    cJSON *url = fw ? cJSON_GetObjectItemCaseSensitive(fw, "url") : NULL;
+    cJSON *sha = fw ? cJSON_GetObjectItemCaseSensitive(fw, "sha256") : NULL;
+
+    bool ok = cJSON_IsString(url) && (url->valuestring != NULL) && cJSON_IsString(sha) && (sha->valuestring != NULL);
+    if (ok) {
+        out_url = url->valuestring;
+        out_sha256 = sha->valuestring;
+    }
+    cJSON_Delete(root);
+    return ok;
+}
+
 static bool parse_manifest_model(const std::string &manifest_json, const std::string &model_name, std::string &out_url, std::string &out_sha256)
 {
     out_url.clear();
@@ -413,6 +434,109 @@ static void send_bad_gateway(httpd_req_t *req, const char *message)
     httpd_resp_set_status(req, "502 Bad Gateway");
     httpd_resp_set_type(req, HTTPD_TYPE_TEXT);
     httpd_resp_send(req, message, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t http_stream_firmware_to_ota_partition_with_sha256(const std::string &url,
+                                                                   const std::string &expected_sha256_hex)
+{
+    esp_http_client_config_t cfg = {};
+    cfg.url = url.c_str();
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = 30000;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_FAIL;
+    }
+
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+    if (!update_partition) {
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+
+    esp_ota_handle_t update_handle = 0;
+    esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
+    if (err != ESP_OK) {
+        esp_http_client_cleanup(client);
+        return err;
+    }
+
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+
+    err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        esp_ota_end(update_handle);
+        esp_http_client_cleanup(client);
+        mbedtls_sha256_free(&sha);
+        return err;
+    }
+
+    int status = esp_http_client_fetch_headers(client);
+    (void)status;
+
+    char buf[SERVER_OTA_SCRATCH_BUFSIZE];
+    size_t total = 0;
+    while (true) {
+        int r = esp_http_client_read(client, buf, sizeof(buf));
+        if (r < 0) {
+            err = ESP_FAIL;
+            break;
+        }
+        if (r == 0) {
+            err = ESP_OK;
+            break;
+        }
+
+        total += (size_t)r;
+        if (total > update_partition->size) {
+            err = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+
+        err = esp_ota_write(update_handle, buf, (size_t)r);
+        if (err != ESP_OK) {
+            break;
+        }
+
+        mbedtls_sha256_update(&sha, (const unsigned char *)buf, (size_t)r);
+    }
+
+    uint8_t digest[32];
+    mbedtls_sha256_finish(&sha, digest);
+    mbedtls_sha256_free(&sha);
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    if (err != ESP_OK) {
+        esp_ota_end(update_handle);
+        return err;
+    }
+
+    if (!expected_sha256_hex.empty()) {
+        const std::string actual_hex = bytes_to_hex(digest, sizeof(digest));
+        if (actual_hex != expected_sha256_hex) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "SHA256 mismatch for firmware.bin expected=" + expected_sha256_hex + " actual=" + actual_hex);
+            esp_ota_end(update_handle);
+            return ESP_ERR_INVALID_CRC;
+        }
+    }
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return ESP_OK;
 }
 
 
@@ -878,6 +1002,56 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         fwrite(dest.c_str(), dest.length(), 1, pfile);
         fclose(pfile);
 
+        httpd_resp_sendstr_chunk(req, "reboot\n");
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_OK;
+    }
+
+    if (_task.compare("download_firmware") == 0)
+    {
+        const std::string manifest_url = UrlDecode(std::string(_manifest_url));
+        if (manifest_url.empty()) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing manifest URL (?manifest=...)");
+            return ESP_OK;
+        }
+
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading firmware manifest: " + manifest_url);
+        std::string manifest;
+        esp_err_t err = http_get_to_string(manifest_url, manifest, 64 * 1024);
+        if (err != ESP_OK) {
+            send_bad_gateway(req, "Failed to fetch manifest");
+            return ESP_OK;
+        }
+
+        std::string sig_err;
+        if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Manifest signature error: " + sig_err);
+            send_bad_gateway(req, sig_err.c_str());
+            return ESP_OK;
+        }
+
+        std::string fw_url;
+        std::string fw_sha256;
+        if (!parse_manifest_firmware_bin(manifest, fw_url, fw_sha256)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid manifest (expected keys: firmware.url, firmware.sha256)");
+            return ESP_OK;
+        }
+
+        if (!is_valid_sha256_hex(fw_sha256)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid firmware sha256 in manifest");
+            return ESP_OK;
+        }
+
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Streaming firmware: " + fw_url);
+        err = http_stream_firmware_to_ota_partition_with_sha256(fw_url, fw_sha256);
+        if (err != ESP_OK) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Firmware streaming OTA failed: " + std::string(esp_err_to_name(err)));
+            send_bad_gateway(req, "Firmware update failed");
+            return ESP_OK;
+        }
+
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Trigger reboot due to firmware update");
+        doRebootOTA();
         httpd_resp_sendstr_chunk(req, "reboot\n");
         httpd_resp_sendstr_chunk(req, NULL);
         return ESP_OK;
