@@ -249,7 +249,19 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
                                                    const std::string &expected_sha256_hex,
                                                    size_t max_bytes)
 {
+    static constexpr size_t kReadBufSize = 1024;
+
     const std::string tmp_path = dest_path + ".part";
+    size_t resume_from = 0;
+    bool try_resume = false;
+
+    {
+        struct stat st;
+        if (stat(tmp_path.c_str(), &st) == 0 && st.st_size > 0) {
+            resume_from = (size_t)st.st_size;
+            try_resume = true;
+        }
+    }
 
     esp_http_client_config_t cfg = {};
     cfg.url = url.c_str();
@@ -262,7 +274,7 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
         return ESP_FAIL;
     }
 
-    FILE *fp = fopen(tmp_path.c_str(), "wb");
+    FILE *fp = fopen(tmp_path.c_str(), try_resume ? "ab" : "wb");
     if (!fp) {
         esp_http_client_cleanup(client);
         return ESP_FAIL;
@@ -271,6 +283,35 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
     mbedtls_sha256_starts(&sha, 0);
+
+    if (try_resume) {
+        FILE *rfp = fopen(tmp_path.c_str(), "rb");
+        if (!rfp) {
+            fclose(fp);
+            esp_http_client_cleanup(client);
+            return ESP_FAIL;
+        }
+
+        char rbuf[kReadBufSize];
+        while (true) {
+            size_t rr = fread(rbuf, 1, sizeof(rbuf), rfp);
+            if (rr == 0) {
+                break;
+            }
+            mbedtls_sha256_update(&sha, (const unsigned char *)rbuf, rr);
+        }
+        fclose(rfp);
+
+        if (resume_from >= max_bytes) {
+            fclose(fp);
+            esp_http_client_cleanup(client);
+            unlink(tmp_path.c_str());
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        const std::string range = "bytes=" + std::to_string(resume_from) + "-";
+        esp_http_client_set_header(client, "Range", range.c_str());
+    }
 
     esp_err_t err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
@@ -281,10 +322,20 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
     }
 
     int http_status = esp_http_client_fetch_headers(client);
-    (void)http_status;
+    if (try_resume && http_status != 206) {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        fclose(fp);
 
-    char buf[1024];
-    size_t total = 0;
+        unlink(tmp_path.c_str());
+        try_resume = false;
+        resume_from = 0;
+        mbedtls_sha256_free(&sha);
+        return http_download_to_file_with_sha256(url, dest_path, expected_sha256_hex, max_bytes);
+    }
+
+    char buf[kReadBufSize];
+    size_t total = try_resume ? resume_from : 0;
     while (true) {
         int r = esp_http_client_read(client, buf, sizeof(buf));
         if (r < 0) {
