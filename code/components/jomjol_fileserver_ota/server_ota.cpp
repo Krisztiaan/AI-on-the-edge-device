@@ -44,6 +44,9 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 #include "statusled.h"
 #include "basic_auth.h"
 #include "../../include/defines.h"
+#include "cJSON.h"
+#include "esp_crt_bundle.h"
+#include "mbedtls/sha256.h"
 
 /*an ota data write buffer ready to write to the flash*/
 static char ota_write_data[SERVER_OTA_SCRATCH_BUFSIZE + 1] = { 0 };
@@ -55,6 +58,246 @@ static bool ota_update_task(std::string fn);
 
 std::string _file_name_update;
 bool initial_setup = false;
+
+static bool hex_to_bytes(const std::string &hex, uint8_t *out, size_t out_len)
+{
+    if (hex.size() != out_len * 2) {
+        return false;
+    }
+
+    auto from_hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+        if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+        return -1;
+    };
+
+    for (size_t i = 0; i < out_len; i++) {
+        int hi = from_hex(hex[i * 2]);
+        int lo = from_hex(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            return false;
+        }
+        out[i] = (uint8_t)((hi << 4) | lo);
+    }
+
+    return true;
+}
+
+static bool is_valid_sha256_hex(const std::string &hex)
+{
+    uint8_t tmp[32];
+    return hex_to_bytes(hex, tmp, sizeof(tmp));
+}
+
+static std::string bytes_to_hex(const uint8_t *bytes, size_t len)
+{
+    static const char *digits = "0123456789abcdef";
+    std::string out;
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; i++) {
+        out.push_back(digits[(bytes[i] >> 4) & 0xF]);
+        out.push_back(digits[bytes[i] & 0xF]);
+    }
+    return out;
+}
+
+static esp_err_t http_get_to_string(const std::string &url, std::string &out, size_t max_bytes)
+{
+    out.clear();
+
+    esp_http_client_config_t cfg = {};
+    cfg.url = url.c_str();
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = 15000;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        esp_http_client_cleanup(client);
+        return err;
+    }
+
+    int status = esp_http_client_fetch_headers(client);
+    (void)status;
+
+    char buf[512];
+    while (true) {
+        int r = esp_http_client_read(client, buf, sizeof(buf));
+        if (r < 0) {
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            return ESP_FAIL;
+        }
+        if (r == 0) {
+            break;
+        }
+
+        if (out.size() + (size_t)r > max_bytes) {
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        out.append(buf, buf + r);
+    }
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    return ESP_OK;
+}
+
+static esp_err_t http_download_to_file_with_sha256(const std::string &url,
+                                                   const std::string &dest_path,
+                                                   const std::string &expected_sha256_hex,
+                                                   size_t max_bytes)
+{
+    esp_http_client_config_t cfg = {};
+    cfg.url = url.c_str();
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = 30000;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_FAIL;
+    }
+
+    FILE *fp = fopen(dest_path.c_str(), "wb");
+    if (!fp) {
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        fclose(fp);
+        esp_http_client_cleanup(client);
+        return err;
+    }
+
+    int http_status = esp_http_client_fetch_headers(client);
+    (void)http_status;
+
+    char buf[1024];
+    size_t total = 0;
+    while (true) {
+        int r = esp_http_client_read(client, buf, sizeof(buf));
+        if (r < 0) {
+            err = ESP_FAIL;
+            break;
+        }
+        if (r == 0) {
+            err = ESP_OK;
+            break;
+        }
+
+        total += (size_t)r;
+        if (total > max_bytes) {
+            err = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+
+        if (fwrite(buf, 1, (size_t)r, fp) != (size_t)r) {
+            err = ESP_FAIL;
+            break;
+        }
+
+        mbedtls_sha256_update(&sha, (const unsigned char *)buf, (size_t)r);
+    }
+
+    uint8_t digest[32];
+    mbedtls_sha256_finish(&sha, digest);
+    mbedtls_sha256_free(&sha);
+
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    fclose(fp);
+
+    if (err != ESP_OK) {
+        unlink(dest_path.c_str());
+        return err;
+    }
+
+    const std::string actual_hex = bytes_to_hex(digest, sizeof(digest));
+    if (!expected_sha256_hex.empty() && actual_hex != expected_sha256_hex) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "SHA256 mismatch for " + dest_path + " expected=" + expected_sha256_hex + " actual=" + actual_hex);
+        unlink(dest_path.c_str());
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    return ESP_OK;
+}
+
+static bool parse_manifest_update_zip(const std::string &manifest_json, std::string &out_url, std::string &out_sha256)
+{
+    out_url.clear();
+    out_sha256.clear();
+
+    cJSON *root = cJSON_Parse(manifest_json.c_str());
+    if (!root) return false;
+
+    cJSON *update = cJSON_GetObjectItemCaseSensitive(root, "update");
+    cJSON *url = update ? cJSON_GetObjectItemCaseSensitive(update, "url") : NULL;
+    cJSON *sha = update ? cJSON_GetObjectItemCaseSensitive(update, "sha256") : NULL;
+
+    bool ok = cJSON_IsString(url) && (url->valuestring != NULL) && cJSON_IsString(sha) && (sha->valuestring != NULL);
+    if (ok) {
+        out_url = url->valuestring;
+        out_sha256 = sha->valuestring;
+    }
+    cJSON_Delete(root);
+    return ok;
+}
+
+static bool parse_manifest_model(const std::string &manifest_json, const std::string &model_name, std::string &out_url, std::string &out_sha256)
+{
+    out_url.clear();
+    out_sha256.clear();
+
+    cJSON *root = cJSON_Parse(manifest_json.c_str());
+    if (!root) return false;
+
+    cJSON *models = cJSON_GetObjectItemCaseSensitive(root, "models");
+    if (!cJSON_IsArray(models)) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    bool ok = false;
+    cJSON *it = NULL;
+    cJSON_ArrayForEach(it, models) {
+        cJSON *name = cJSON_GetObjectItemCaseSensitive(it, "name");
+        cJSON *url = cJSON_GetObjectItemCaseSensitive(it, "url");
+        cJSON *sha = cJSON_GetObjectItemCaseSensitive(it, "sha256");
+        if (!cJSON_IsString(name) || !cJSON_IsString(url) || !cJSON_IsString(sha)) continue;
+        if (model_name == name->valuestring) {
+            out_url = url->valuestring;
+            out_sha256 = sha->valuestring;
+            ok = true;
+            break;
+        }
+    }
+
+    cJSON_Delete(root);
+    return ok;
+}
+
+static void send_bad_gateway(httpd_req_t *req, const char *message)
+{
+    httpd_resp_set_status(req, "502 Bad Gateway");
+    httpd_resp_set_type(req, HTTPD_TYPE_TEXT);
+    httpd_resp_send(req, message, HTTPD_RESP_USE_STRLEN);
+}
 
 
 static void infinite_loop(void)
@@ -390,14 +633,16 @@ esp_err_t handler_ota_update(httpd_req_t *req)
 #endif
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "handler_ota_update");
-    char _query[200];
+    char _query[600];
     char _filename[100];
-    char _valuechar[30];    
+    char _valuechar[30];
+    char _manifest_url[420] = {0};
+    char _model_name[100] = {0};
     std::string fn = "/sdcard/firmware/";
     bool _file_del = false;
     std::string _task = "";
 
-    if (httpd_req_get_url_query_str(req, _query, 200) == ESP_OK)
+    if (httpd_req_get_url_query_str(req, _query, sizeof(_query)) == ESP_OK)
     {
         ESP_LOGD(TAG, "Query: %s", _query);
         
@@ -419,6 +664,107 @@ esp_err_t handler_ota_update(httpd_req_t *req)
             ESP_LOGD(TAG, "Delete Default File: %s", fn.c_str());
         }
 
+        httpd_query_key_value(_query, "manifest", _manifest_url, sizeof(_manifest_url) - 1);
+        httpd_query_key_value(_query, "model", _model_name, sizeof(_model_name) - 1);
+
+    }
+
+    if (_task.compare("download_update") == 0)
+    {
+        const std::string manifest_url = UrlDecode(std::string(_manifest_url));
+        if (manifest_url.empty()) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing manifest URL (?manifest=...)");
+            return ESP_OK;
+        }
+
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading update manifest: " + manifest_url);
+        std::string manifest;
+        esp_err_t err = http_get_to_string(manifest_url, manifest, 32 * 1024);
+        if (err != ESP_OK) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to fetch manifest: " + std::to_string(err));
+            send_bad_gateway(req, "Failed to fetch manifest");
+            return ESP_OK;
+        }
+
+        std::string update_url;
+        std::string update_sha256;
+        if (!parse_manifest_update_zip(manifest, update_url, update_sha256)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid manifest (expected keys: update.url, update.sha256)");
+            return ESP_OK;
+        }
+
+        if (!is_valid_sha256_hex(update_sha256)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid update sha256 in manifest");
+            return ESP_OK;
+        }
+
+        const std::string dest = "/sdcard/firmware/github_update.zip";
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading update: " + update_url);
+        err = http_download_to_file_with_sha256(update_url, dest, update_sha256, MAX_FILE_SIZE);
+        if (err != ESP_OK) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Update download failed: " + std::to_string(err));
+            send_bad_gateway(req, "Update download failed");
+            return ESP_OK;
+        }
+
+        FILE *pfile = fopen("/sdcard/update.txt", "w");
+        if (!pfile) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to schedule update");
+            return ESP_OK;
+        }
+        fwrite(dest.c_str(), dest.length(), 1, pfile);
+        fclose(pfile);
+
+        httpd_resp_sendstr_chunk(req, "reboot\n");
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_OK;
+    }
+
+    if (_task.compare("download_model") == 0)
+    {
+        const std::string manifest_url = UrlDecode(std::string(_manifest_url));
+        const std::string model_name = UrlDecode(std::string(_model_name));
+        if (manifest_url.empty() || model_name.empty()) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing manifest URL or model name (?manifest=...&model=...)");
+            return ESP_OK;
+        }
+
+        if (model_name.find('/') != std::string::npos || model_name.find('\\') != std::string::npos) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid model name");
+            return ESP_OK;
+        }
+
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading model manifest: " + manifest_url);
+        std::string manifest;
+        esp_err_t err = http_get_to_string(manifest_url, manifest, 64 * 1024);
+        if (err != ESP_OK) {
+            send_bad_gateway(req, "Failed to fetch manifest");
+            return ESP_OK;
+        }
+
+        std::string model_url;
+        std::string model_sha256;
+        if (!parse_manifest_model(manifest, model_name, model_url, model_sha256)) {
+            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Model not found in manifest");
+            return ESP_OK;
+        }
+
+        if (!is_valid_sha256_hex(model_sha256)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid model sha256 in manifest");
+            return ESP_OK;
+        }
+
+        const std::string dest = "/sdcard/config/" + model_name;
+        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading model: " + model_url);
+        err = http_download_to_file_with_sha256(model_url, dest, model_sha256, 3 * 1024 * 1024);
+        if (err != ESP_OK) {
+            send_bad_gateway(req, "Model download failed");
+            return ESP_OK;
+        }
+
+        httpd_resp_sendstr_chunk(req, "ok\n");
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_OK;
     }
 
     if (_task.compare("emptyfirmwaredir") == 0)

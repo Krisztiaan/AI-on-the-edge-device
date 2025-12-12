@@ -1,0 +1,88 @@
+name: Publish GitHub Pages Manifest
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            tag="$(gh api /repos/${{ github.repository }}/releases/latest --jq .tag_name)"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download update zip from release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          gh release download "$tag" -R "${{ github.repository }}" -p "*__update__${tag}.zip"
+          ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build pages content (manifest + models)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          update_zip="$(ls *__update__*.zip 2>/dev/null || true)"
+          if [[ -z "$update_zip" ]]; then
+            update_zip="$(ls *__update__${tag}.zip | head -n 1)"
+          fi
+
+          mkdir -p pages/models
+          cp sd-card/config/*.tfl pages/models/ 2>/dev/null || true
+          cp sd-card/config/*.tflite pages/models/ 2>/dev/null || true
+
+          python3 tools/github-pages/generate_manifest.py \
+            --repo "${{ github.repository }}" \
+            --tag "$tag" \
+            --update-file "$update_zip" \
+            --models-dir pages/models \
+            --out pages/manifest.json
+
+          cat > pages/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>AIOTED Manifest</title>
+          <h1>AIOTED Manifest</h1>
+          <p>Download: <a href="manifest.json">manifest.json</a></p>
+HTML
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

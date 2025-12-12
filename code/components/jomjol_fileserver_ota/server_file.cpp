@@ -67,6 +67,40 @@ string SUFFIX_ZW = "_tmp";
 static esp_err_t send_logfile(httpd_req_t *req, bool send_full_file);
 static esp_err_t send_datafile(httpd_req_t *req, bool send_full_file);
 
+static bool is_safe_zip_entry_name(const std::string &entry_name)
+{
+    if (entry_name.empty()) {
+        return false;
+    }
+
+    if (entry_name[0] == '/' || entry_name[0] == '\\') {
+        return false;
+    }
+
+    if (entry_name.find(':') != std::string::npos) { // Windows drive letter / scheme separators etc.
+        return false;
+    }
+
+    std::string segment;
+    segment.reserve(entry_name.size());
+    for (char c : entry_name) {
+        if (c == '/' || c == '\\') {
+            if (segment == "..") {
+                return false;
+            }
+            segment.clear();
+        }
+        else {
+            segment.push_back(c);
+        }
+    }
+    if (segment == "..") {
+        return false;
+    }
+
+    return true;
+}
+
 esp_err_t get_numbers_file_handler(httpd_req_t *req)
 {
     std::string ret = flowctrl.getNumbersName();
@@ -954,7 +988,6 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
     size_t uncomp_size;
     mz_zip_archive zip_archive;
     void* p;
-    char archive_filename[64];
     std::string zw, ret = "";
     std::string directory = "";
 
@@ -988,100 +1021,115 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
         {
             mz_zip_archive_file_stat file_stat;
             mz_zip_reader_file_stat(&zip_archive, i, &file_stat);
-            sprintf(archive_filename, file_stat.m_filename);
-            
-            if (!file_stat.m_is_directory) {
-            // Try to extract all the files to the heap.
-            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename, &uncomp_size, 0);
-                if (!p)
-                {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mz_zip_reader_extract_file_to_heap() failed on file " + string(archive_filename));
-                    mz_zip_reader_end(&zip_archive);
-                    return ret;
-                }
-            
-                // Save to File.
-                zw = std::string(archive_filename);
-                ESP_LOGD(TAG, "Rohfilename: %s", zw.c_str());
 
-                if (toUpper(zw) == "FIRMWARE.BIN")
-                {
-                    zw = _target_bin + zw;
-                    ret = zw;
-                }
-                else
-                {
-                    std::string _dir = getDirectory(zw);
-                    if ((_dir == "config-initial") && !_initial_setup)
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        _dir = "config";
-                        std::string _s1 = "config-initial";
-                        FindReplace(zw, _s1, _dir);
-                    }
-
-                    if (_dir.length() > 0)
-                    {
-                        zw = _main + zw;
-                    }
-                    else
-                    {
-                        zw = _html_tmp + zw;
-                    }
-
-                }
-
-                // files in the html folder shall be redirected to the temporary html folder
-                if (zw.find(_html_final) == 0) {
-                    FindReplace(zw, _html_final, _html_tmp);
-                }
-            
-                string filename_zw = zw + SUFFIX_ZW;
-
-                ESP_LOGI(TAG, "File to extract: %s, Temp. Filename: %s", zw.c_str(), filename_zw.c_str());
-
-                std::string folder = filename_zw.substr(0, filename_zw.find_last_of('/'));
-                MakeDir(folder);
-
-                // extrahieren in zwischendatei
-                DeleteFile(filename_zw);
-
-                FILE* fpTargetFile = fopen(filename_zw.c_str(), "wb");
-                uint writtenbytes = fwrite(p, 1, (uint)uncomp_size, fpTargetFile);
-                fclose(fpTargetFile);
-                
-                bool isokay = true;
-
-                if (writtenbytes == (uint)uncomp_size)
-                {
-                    isokay = true;
-                }
-                else
-                {
-                    isokay = false;
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in writting extracted file (function fwrite) extracted file \"" +
-                            string(archive_filename) + "\", size " + to_string(uncomp_size));
-                }
-
-                DeleteFile(zw);
-                if (!isokay)
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in fwrite \"" + string(archive_filename) + "\", size " + to_string(uncomp_size));
-                isokay = isokay && RenameFile(filename_zw, zw);
-                if (!isokay)
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in Rename \"" + filename_zw + "\" to \"" + zw);
-
-                if (isokay)
-                    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Successfully extracted file \"" + string(archive_filename) + "\", size " + to_string(uncomp_size));
-                else
-                {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in extracting file \"" + string(archive_filename) + "\", size " + to_string(uncomp_size));
-                    ret = "ERROR";
-                }
-                mz_free(p);
+            if (file_stat.m_is_directory) {
+                continue;
             }
+
+            const std::string entry_name = std::string(file_stat.m_filename);
+            if (!is_safe_zip_entry_name(entry_name)) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unsafe ZIP entry name rejected: " + entry_name);
+                ret = "ERROR";
+                continue;
+            }
+
+            // Determine target path before extracting (allows early skipping without leaking memory).
+            zw = entry_name;
+            ESP_LOGD(TAG, "ZIP entry: %s", zw.c_str());
+
+            if (toUpper(zw) == "FIRMWARE.BIN")
+            {
+                zw = _target_bin + "firmware.bin";
+                ret = zw;
+            }
+            else
+            {
+                std::string _dir = getDirectory(zw);
+                if ((_dir == "config-initial") && !_initial_setup)
+                {
+                    continue;
+                }
+                else
+                {
+                    _dir = "config";
+                    std::string _s1 = "config-initial";
+                    FindReplace(zw, _s1, _dir);
+                }
+
+                if (_dir.length() > 0)
+                {
+                    zw = _main + zw;
+                }
+                else
+                {
+                    zw = _html_tmp + zw;
+                }
+            }
+
+            // files in the html folder shall be redirected to the temporary html folder
+            if (zw.find(_html_final) == 0) {
+                FindReplace(zw, _html_final, _html_tmp);
+            }
+
+            if (zw.size() >= FILE_PATH_MAX) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ZIP entry path too long rejected: " + zw);
+                ret = "ERROR";
+                continue;
+            }
+
+            // Try to extract all the files to the heap.
+            p = mz_zip_reader_extract_to_heap(&zip_archive, i, &uncomp_size, 0);
+            if (!p)
+            {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mz_zip_reader_extract_to_heap() failed on file " + entry_name);
+                mz_zip_reader_end(&zip_archive);
+                return ret;
+            }
+
+            string filename_zw = zw + SUFFIX_ZW;
+
+            ESP_LOGI(TAG, "File to extract: %s, Temp. Filename: %s", zw.c_str(), filename_zw.c_str());
+
+            std::string folder = filename_zw.substr(0, filename_zw.find_last_of('/'));
+            MakeDir(folder);
+
+            // extrahieren in zwischendatei
+            DeleteFile(filename_zw);
+
+            FILE* fpTargetFile = fopen(filename_zw.c_str(), "wb");
+            if (!fpTargetFile) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to open target file: " + filename_zw);
+                mz_free(p);
+                ret = "ERROR";
+                continue;
+            }
+
+            uint writtenbytes = fwrite(p, 1, (uint)uncomp_size, fpTargetFile);
+            fclose(fpTargetFile);
+
+            bool isokay = (writtenbytes == (uint)uncomp_size);
+            if (!isokay)
+            {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in writting extracted file (function fwrite) extracted file \"" +
+                        entry_name + "\", size " + to_string(uncomp_size));
+            }
+
+            DeleteFile(zw);
+            if (!isokay)
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in fwrite \"" + entry_name + "\", size " + to_string(uncomp_size));
+            isokay = isokay && RenameFile(filename_zw, zw);
+            if (!isokay)
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in Rename \"" + filename_zw + "\" to \"" + zw);
+
+            if (isokay)
+                LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Successfully extracted file \"" + entry_name + "\", size " + to_string(uncomp_size));
+            else
+            {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in extracting file \"" + entry_name + "\", size " + to_string(uncomp_size));
+                ret = "ERROR";
+            }
+
+            mz_free(p);
         }
 
         // Close the archive, freeing any resources it was using
@@ -1098,7 +1146,6 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
     size_t uncomp_size;
     mz_zip_archive zip_archive;
     void* p;
-    char archive_filename[64];
     std::string zw;
 //    static const char* s_Test_archive_filename = "testhtml.zip";
 
@@ -1131,10 +1178,18 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
         {
             mz_zip_archive_file_stat file_stat;
             mz_zip_reader_file_stat(&zip_archive, i, &file_stat);
-            sprintf(archive_filename, file_stat.m_filename);
+            if (file_stat.m_is_directory) {
+                continue;
+            }
+
+            const std::string entry_name = std::string(file_stat.m_filename);
+            if (!is_safe_zip_entry_name(entry_name)) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unsafe ZIP entry name rejected: " + entry_name);
+                continue;
+            }
  
             // Try to extract all the files to the heap.
-            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename, &uncomp_size, 0);
+            p = mz_zip_reader_extract_to_heap(&zip_archive, i, &uncomp_size, 0);
             if (!p)
             {
                 LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mz_zip_reader_extract_file_to_heap() failed!");
@@ -1143,14 +1198,18 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
             }
 
             // Save to File.
-            zw = std::string(archive_filename);
-            zw = _target_directory + zw;
+            zw = _target_directory + entry_name;
             ESP_LOGD(TAG, "File to extract: %s", zw.c_str());
             FILE* fpTargetFile = fopen(zw.c_str(), "wb");
+            if (!fpTargetFile) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to open target file: " + zw);
+                mz_free(p);
+                continue;
+            }
             fwrite(p, 1, (uint)uncomp_size, fpTargetFile);
             fclose(fpTargetFile);
 
-            ESP_LOGD(TAG, "Successfully extracted file \"%s\", size %u", archive_filename, (uint)uncomp_size);
+            ESP_LOGD(TAG, "Successfully extracted file \"%s\", size %u", entry_name.c_str(), (uint)uncomp_size);
             //            ESP_LOGD(TAG, "File data: \"%s\"", (const char*)p);
 
             // We're done.

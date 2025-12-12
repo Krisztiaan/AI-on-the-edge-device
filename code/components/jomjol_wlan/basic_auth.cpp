@@ -68,7 +68,7 @@ esp_err_t basic_auth_request_filter(httpd_req_t *req, esp_err_t original_handler
             }
 
             if (httpd_req_get_hdr_value_str(req, "Authorization", buf, buf_len) == ESP_OK) {
-                ESP_LOGI(TAG, "Found header => Authorization: %s", buf);
+                ESP_LOGD(TAG, "Found header => Authorization");
             } else {
                 ESP_LOGE(TAG, "No auth value received");
             }
