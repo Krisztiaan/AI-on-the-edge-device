@@ -102,16 +102,6 @@ jobs:
             --models-dir pages/models \
             --out pages/manifest.json
 
-          cat > pages/index.html <<'HTML'
-          <!doctype html>
-          <meta charset="utf-8">
-          <title>AIOTED Manifest</title>
-          <h1>AIOTED Manifest</h1>
-          <p>Download: <a href="manifest.json">manifest.json</a></p>
-          <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
-          <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
-          HTML
-
       - name: Sign manifest (Ed25519)
         shell: bash
         env:
@@ -135,6 +125,25 @@ jobs:
           PY
 
           rm -f /tmp/ed25519_signing_key.pem pages/manifest.json.sig.bin
+
+      - name: Write index.html
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig_line=""
+          if [[ -f pages/manifest.json.sig ]]; then
+            sig_line='<p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>'
+          fi
+
+          cat > pages/index.html <<HTML
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>AIOTED Manifest</title>
+          <h1>AIOTED Manifest</h1>
+          <p>Download: <a href="manifest.json">manifest.json</a></p>
+          <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
+          ${sig_line}
+          HTML
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
