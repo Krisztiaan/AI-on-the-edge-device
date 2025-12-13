@@ -5,3 +5,6 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 # Client-only TLS (we don't serve HTTPS).
 CONFIG_MBEDTLS_TLS_SERVER_AND_CLIENT=n
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
+
+# Reduce flash bloat by disabling ZIP extraction/update support (miniz).
+CONFIG_JOMJOL_ENABLE_ZIP_UPDATES=n

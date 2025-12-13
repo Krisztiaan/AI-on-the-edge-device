@@ -1,0 +1,12 @@
+menu "AI-on-the-edge-device OTA/File Server"
+
+config JOMJOL_ENABLE_ZIP_UPDATES
+    bool "Enable ZIP-based updates (html.zip / update.zip)"
+    default y
+    help
+        Enables handling ZIP files for updates, including extracting html.zip and
+        ZIP-based update bundles. Disable to reduce firmware size if you only
+        use raw firmware.bin updates / online update.
+
+endmenu
+

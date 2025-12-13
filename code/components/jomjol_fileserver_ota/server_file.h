@@ -3,13 +3,17 @@
 #ifndef SERVERFILE_H
 #define SERVERFILE_H
 
+#include "sdkconfig.h"
+
 #include <esp_http_server.h>
 #include <string>
 
 void register_server_file_uri(httpd_handle_t server, const char *base_path);
 
+#if CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
 void unzip(std::string _in_zip_file, std::string _target_directory);
 std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::string _html_final, std::string _target_bin, std::string _main = "/sdcard/", bool _initial_setup = false);
+#endif
 
 
 void delete_all_in_directory(std::string _directory);
