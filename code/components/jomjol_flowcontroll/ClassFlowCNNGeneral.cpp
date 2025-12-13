@@ -1,9 +1,8 @@
 #include "ClassFlowCNNGeneral.h"
 
 #include <math.h>
-#include <iomanip> 
 #include <sys/types.h>
-#include <sstream>      // std::stringstream
+#include <cstdio>
 
 #include "CTfLiteClass.h"
 #include "ClassLogFile.h"
@@ -462,9 +461,9 @@ string ClassFlowCNNGeneral::getHTMLSingleStep(string host) {
     htmlinfo = GetHTMLInfo();
     
     for (int i = 0; i < htmlinfo.size(); ++i) {
-        std::stringstream stream;
-        stream << std::fixed << std::setprecision(1) << htmlinfo[i]->val;
-        zw = stream.str();
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.1f", (double)htmlinfo[i]->val);
+        zw = buf;
 
         #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
             result = result + "<img src=\"" + host + "/img_tmp/" +  htmlinfo[i]->filename + "\"> " + zw;

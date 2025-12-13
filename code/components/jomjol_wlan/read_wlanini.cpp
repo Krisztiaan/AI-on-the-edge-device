@@ -4,11 +4,8 @@
 
 #include "connect_wlan.h"
 
-#include <fstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <iostream>
 #include <string.h>
 #include "esp_log.h"
 #include "ClassLogFile.h"

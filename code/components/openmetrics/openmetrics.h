@@ -4,7 +4,6 @@
 #define OPENMETRICS_H
 
 #include <string>
-#include <fstream>
 #include <vector>
 
 #include "ClassFlowDefineTypes.h"

@@ -1,7 +1,7 @@
-#include <iostream>
 #include <string>
 #include <vector>
 #include <regex>
+#include <cstdio>
 
 #include "esp_psram.h"
 #include "esp_pm.h"
@@ -667,8 +667,11 @@ void migrateConfiguration(void) {
     }
 
     std::string section = "";
-    std::ifstream ifs(CONFIG_FILE);
-    std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+    std::string content;
+    if (!ReadFileToString(CONFIG_FILE, content, 512 * 1024)) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to read config file for migration");
+        return;
+    }
 
     /* Split config file it array of lines */
     std::vector<std::string> configLines = splitString(content);
@@ -989,14 +992,20 @@ void migrateConfiguration(void) {
 
 std::vector<std::string> splitString(const std::string& str) {
     std::vector<std::string> tokens;
- 
-    std::stringstream ss(str);
-    std::string token;
 
-    while (std::getline(ss, token, '\n')) {
-        tokens.push_back(token);
+    size_t start = 0;
+    while (start <= str.size()) {
+        size_t end = str.find('\n', start);
+        if (end == std::string::npos) {
+            end = str.size();
+        }
+        tokens.push_back(str.substr(start, end - start));
+        if (end == str.size()) {
+            break;
+        }
+        start = end + 1;
     }
- 
+
     return tokens;
 }
 

@@ -2,10 +2,7 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <fstream>
 #include <vector>
-#include <sstream>
-#include <iostream>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -64,10 +61,11 @@ esp_netif_t *my_sta;
 
 
 void strinttoip4(const char *ip, int &a, int &b, int &c, int &d) {
-    std::string zw = std::string(ip);
-    std::stringstream s(zw);
-    char ch; //to temporarily store the '.'
-    s >> a >> ch >> b >> ch >> c >> ch >> d;
+    a = b = c = d = 0;
+    if (!ip) {
+        return;
+    }
+    sscanf(ip, "%d.%d.%d.%d", &a, &b, &c, &d);
 }
 
 

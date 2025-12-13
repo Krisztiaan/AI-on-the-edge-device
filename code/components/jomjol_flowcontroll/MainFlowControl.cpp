@@ -6,8 +6,7 @@
 #include "esp_log.h"
 #include <esp_timer.h>
 
-#include <iomanip>
-#include <sstream>
+#include <cstdio>
 
 #include "../../include/defines.h"
 #include "Helper.h"
@@ -720,9 +719,9 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
                     }
                     else
                     {
-                        std::stringstream stream;
-                        stream << std::fixed << std::setprecision(1) << htmlinfodig[i]->val;
-                        zw = stream.str();
+                        char buf[32];
+                        snprintf(buf, sizeof(buf), "%.1f", (double)htmlinfodig[i]->val);
+                        zw = buf;
 
                         // Numbers greater than 10 and less than 0 indicate NaN, since a Roi can only have values ​​from 0 to 9.
                         if ((std::stod(zw) >= 10) || (std::stod(zw) < 0))
@@ -753,9 +752,9 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
 
                 for (int i = 0; i < htmlinfoana.size(); ++i)
                 {
-                    std::stringstream stream;
-                    stream << std::fixed << std::setprecision(1) << htmlinfoana[i]->val;
-                    zw = stream.str();
+                    char buf[32];
+                    snprintf(buf, sizeof(buf), "%.1f", (double)htmlinfoana[i]->val);
+                    zw = buf;
                     
                     // Numbers greater than 10 and less than 0 indicate NaN, since a Roi can only have values ​​from 0 to 9.
                     if ((std::stod(zw) >= 10) || (std::stod(zw) < 0))

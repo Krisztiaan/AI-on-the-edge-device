@@ -1,7 +1,6 @@
 #ifdef ENABLE_MQTT
 #include <string>
-#include <sstream>
-#include <iomanip>
+#include <cstdio>
 #include <vector>
 #include <cctype>
 
@@ -324,9 +323,9 @@ bool publishStaticData(int qos) {
     allSendsSuccessed |= MQTTPublish(maintopic + "/" + "IP", *getIPAddress(), qos, retainFlag);
     allSendsSuccessed |= MQTTPublish(maintopic + "/" + "hostname", wlan_config.hostname, qos, retainFlag);
 
-    std::stringstream stream;
-    stream << std::fixed << std::setprecision(1) << roundInterval; // minutes
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "interval", stream.str(), qos, retainFlag);
+    char interval_buf[32];
+    snprintf(interval_buf, sizeof(interval_buf), "%.1f", (double)roundInterval); // minutes
+    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "interval", interval_buf, qos, retainFlag);
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Successfully published all Static MQTT topics");
 

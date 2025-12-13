@@ -226,22 +226,18 @@ bool MQTT_Configure(std::string _mqttURI, std::string _clientid, std::string _us
     callbackOnConnected = ( void (*)(std::string, bool) )(_callbackOnConnected);
 
     if (_clientcertfilename.length() && _clientkeyfilename.length()) {
-        std::ifstream cert_ifs(_clientcertfilename);
-        if (cert_ifs.is_open()) {
-            std::string cert_content((std::istreambuf_iterator<char>(cert_ifs)), (std::istreambuf_iterator<char>()));
+        std::string cert_content;
+        if (ReadFileToString(_clientcertfilename, cert_content, 64 * 1024)) {
             clientCert = cert_content;
-            cert_ifs.close();
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "using clientCert: " + _clientcertfilename);
         }
         else {
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "could not open clientCert: " + _clientcertfilename);
         }
 
-        std::ifstream key_ifs(_clientkeyfilename);
-        if (key_ifs.is_open()) {
-            std::string key_content((std::istreambuf_iterator<char>(key_ifs)), (std::istreambuf_iterator<char>()));
+        std::string key_content;
+        if (ReadFileToString(_clientkeyfilename, key_content, 64 * 1024)) {
             clientKey = key_content;
-            key_ifs.close();
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "using clientKey: " + _clientkeyfilename);
         }
         else {
@@ -250,11 +246,9 @@ bool MQTT_Configure(std::string _mqttURI, std::string _clientid, std::string _us
     }
 
     if (_cacertfilename.length()) {
-        std::ifstream ca_ifs(_cacertfilename);
-        if (ca_ifs.is_open()) {
-            std::string content((std::istreambuf_iterator<char>(ca_ifs)), (std::istreambuf_iterator<char>()));
+        std::string content;
+        if (ReadFileToString(_cacertfilename, content, 64 * 1024)) {
             caCert = content;
-            ca_ifs.close();
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "using caCert: " + _cacertfilename);
         }
         else {

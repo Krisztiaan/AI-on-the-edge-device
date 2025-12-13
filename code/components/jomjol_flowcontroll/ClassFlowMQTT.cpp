@@ -1,7 +1,6 @@
 #ifdef ENABLE_MQTT
 
-#include <sstream>
-#include <iomanip>
+#include <cstdio>
 #include "ClassFlowMQTT.h"
 #include "Helper.h"
 #include "connect_wlan.h"
@@ -232,10 +231,11 @@ bool ClassFlowMQTT::Start(float AutoInterval)
     roundInterval = AutoInterval; // Minutes
     keepAlive = roundInterval * 60 * 2.5; // Seconds, make sure it is greater thatn 2 rounds!
 
-    std::stringstream stream;
-    stream << std::fixed << std::setprecision(1) << "Digitizer interval is " << roundInterval <<
-            " minutes => setting MQTT LWT timeout to " << ((float)keepAlive/60) << " minutes.";
-    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, stream.str());
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "Digitizer interval is %.1f minutes => setting MQTT LWT timeout to %.1f minutes.",
+             (double)roundInterval, (double)keepAlive / 60.0);
+    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, std::string(msg));
 
     mqttServer_setParameter(flowpostprocessing->GetNumbers(), keepAlive, roundInterval);
 

@@ -51,7 +51,6 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
     #include "esp_crt_bundle.h"
 #endif
 #include "mbedtls/sha256.h"
-#include <fstream>
 
 #include "ota_ca_pem.h"
 
@@ -232,12 +231,10 @@ static std::string trim_ascii_whitespace(const std::string &s)
 static bool read_file_trimmed(const std::string &path, std::string &out)
 {
     out.clear();
-    std::ifstream ifs(path);
-    if (!ifs.is_open()) {
+    std::string content;
+    if (!ReadFileToString(path, content, 64 * 1024)) {
         return false;
     }
-
-    std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
     out = trim_ascii_whitespace(content);
     return true;
 }
