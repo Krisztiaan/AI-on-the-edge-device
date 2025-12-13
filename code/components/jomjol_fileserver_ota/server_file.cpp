@@ -124,42 +124,42 @@ esp_err_t get_data_file_handler(httpd_req_t *req)
 
 esp_err_t get_tflite_file_handler(httpd_req_t *req)
 {
-    struct dirent *entry;
-
-    std::string _filename, _fileext;
-    size_t pos = 0;
-    
-    const char verz_name[] = "/spiffs/config";
-    ESP_LOGD(TAG, "Suche TFLITE in /spiffs/config/");
-
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "text/plain");
 
-    DIR *dir = opendir(verz_name);
-    while ((entry = readdir(dir)) != NULL) 
-    {
-        _filename = std::string(entry->d_name);
-        ESP_LOGD(TAG, "File: %s", _filename.c_str());
-
-        // ignore all files with starting dot (hidden files)
-        if (_filename.rfind(".", 0) == 0) {
-            continue;
+    auto list_dir = [&](const char *dir_path, const char *prefix) {
+        DIR *dir = opendir(dir_path);
+        if (!dir) {
+            ESP_LOGW(TAG, "Failed to open dir: %s", dir_path);
+            return;
         }
 
-        _fileext = _filename;
-        pos = _fileext.find_last_of(".");
-        if (pos != std::string::npos)
-            _fileext = _fileext.erase(0, pos + 1);
-
-        ESP_LOGD(TAG, " Extension: %s", _fileext.c_str());
-
-        if ((_fileext == "tfl") || (_fileext == "tflite"))
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL)
         {
-            _filename = "/config/" + _filename + "\t";
-            httpd_resp_sendstr_chunk(req, _filename.c_str());
+            std::string filename(entry->d_name);
+            // ignore all files with starting dot (hidden files)
+            if (filename.rfind(".", 0) == 0) {
+                continue;
+            }
+
+            const bool is_tflite = (filename.size() >= 4 && filename.compare(filename.size() - 4, 4, ".tfl") == 0) ||
+                                   (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tflite") == 0) ||
+                                   (filename.size() >= 10 && filename.compare(filename.size() - 10, 10, ".tflite.gz") == 0) ||
+                                   (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tfl.gz") == 0);
+            if (!is_tflite) {
+                continue;
+            }
+
+            std::string out = std::string(prefix) + filename + "\t";
+            httpd_resp_sendstr_chunk(req, out.c_str());
         }
-    }
-    closedir(dir);
+        closedir(dir);
+    };
+
+    ESP_LOGD(TAG, "Suche TFLITE in /spiffs/config/ and /spiffs/models/");
+    list_dir("/spiffs/config", "/config/");
+    list_dir("/spiffs/models", "/models/");
 
     httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;

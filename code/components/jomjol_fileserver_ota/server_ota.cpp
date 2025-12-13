@@ -1,5 +1,7 @@
 #include "server_ota.h"
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include "string.h"
 
@@ -210,6 +212,127 @@ static esp_err_t http_get_to_string(const std::string &url, std::string &out, si
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 
+    return ESP_OK;
+}
+
+static bool is_hex_sha256(const std::string& s)
+{
+    if (s.empty()) return true;
+    if (s.size() != 64) return false;
+    for (char c : s) {
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+static std::string to_lower_ascii(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+static std::string sha256_hex(const uint8_t hash[32])
+{
+    static const char* kHex = "0123456789abcdef";
+    std::string out;
+    out.resize(64);
+    for (int i = 0; i < 32; i++) {
+        out[i * 2] = kHex[(hash[i] >> 4) & 0xF];
+        out[i * 2 + 1] = kHex[hash[i] & 0xF];
+    }
+    return out;
+}
+
+static esp_err_t http_get_to_file_sha256(const std::string& url, const std::string& dest_path, size_t max_bytes, std::string& out_sha256, size_t& out_bytes)
+{
+    out_sha256.clear();
+    out_bytes = 0;
+
+    esp_http_client_config_t cfg = {};
+    cfg.url = url.c_str();
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = 30000;
+    cfg.disable_auto_redirect = false;
+    if (apply_tls_settings(cfg) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        esp_http_client_cleanup(client);
+        return err;
+    }
+
+    (void)esp_http_client_fetch_headers(client);
+    int http_status = esp_http_client_get_status_code(client);
+    if (http_status < 200 || http_status >= 300) {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+
+    FILE* f = fopen(dest_path.c_str(), "wb");
+    if (!f) {
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
+    }
+
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+
+    char buf[1024];
+    while (true) {
+        int r = esp_http_client_read(client, buf, sizeof(buf));
+        if (r < 0) {
+            fclose(f);
+            unlink(dest_path.c_str());
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            mbedtls_sha256_free(&sha);
+            return ESP_FAIL;
+        }
+        if (r == 0) {
+            break;
+        }
+
+        if (out_bytes + (size_t)r > max_bytes) {
+            fclose(f);
+            unlink(dest_path.c_str());
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            mbedtls_sha256_free(&sha);
+            return ESP_ERR_INVALID_SIZE;
+        }
+
+        if ((size_t)r != fwrite(buf, 1, (size_t)r, f)) {
+            fclose(f);
+            unlink(dest_path.c_str());
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            mbedtls_sha256_free(&sha);
+            return ESP_FAIL;
+        }
+
+        mbedtls_sha256_update(&sha, (const unsigned char*)buf, (size_t)r);
+        out_bytes += (size_t)r;
+    }
+
+    fclose(f);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+
+    uint8_t digest[32];
+    mbedtls_sha256_finish(&sha, digest);
+    mbedtls_sha256_free(&sha);
+    out_sha256 = sha256_hex(digest);
     return ESP_OK;
 }
 
@@ -1375,6 +1498,87 @@ esp_err_t handler_reboot(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t handler_models_download(httpd_req_t *req)
+{
+    char query[512];
+    char url[384];
+    char name[96];
+    char sha[80];
+    char overwrite_buf[8];
+
+    url[0] = '\0';
+    name[0] = '\0';
+    sha[0] = '\0';
+    overwrite_buf[0] = '\0';
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query string");
+    }
+    (void)httpd_query_key_value(query, "url", url, sizeof(url));
+    (void)httpd_query_key_value(query, "name", name, sizeof(name));
+    (void)httpd_query_key_value(query, "sha256", sha, sizeof(sha));
+    (void)httpd_query_key_value(query, "overwrite", overwrite_buf, sizeof(overwrite_buf));
+
+    if (url[0] == '\0' || name[0] == '\0') {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Required: url, name");
+    }
+
+    std::string name_s(name);
+    if (name_s.find('/') != std::string::npos || name_s.find("..") != std::string::npos) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid name");
+    }
+
+    std::string expected_sha = to_lower_ascii(std::string(sha));
+    if (!is_hex_sha256(expected_sha)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid sha256 (expected 64 hex chars)");
+    }
+
+    const bool overwrite = (overwrite_buf[0] == '1' || overwrite_buf[0] == 'y' || overwrite_buf[0] == 'Y' ||
+                            overwrite_buf[0] == 't' || overwrite_buf[0] == 'T');
+
+    (void)MakeDir("/spiffs/models");
+    std::string final_path = std::string("/spiffs/models/") + name_s;
+    std::string tmp_path = final_path + ".part";
+
+    struct stat st;
+    if (!overwrite && stat(final_path.c_str(), &st) == 0) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "text/plain");
+        return httpd_resp_sendstr(req, "File exists (use overwrite=1)");
+    }
+    (void)unlink(tmp_path.c_str());
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Model download: " + std::string(url) + " -> " + final_path);
+
+    std::string got_sha;
+    size_t bytes = 0;
+    esp_err_t err = http_get_to_file_sha256(url, tmp_path, 5 * 1024 * 1024, got_sha, bytes);
+    if (err != ESP_OK) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model download failed (" + std::string(esp_err_to_name(err)) + ")");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Download failed");
+    }
+
+    if (!expected_sha.empty() && got_sha != expected_sha) {
+        (void)unlink(tmp_path.c_str());
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model SHA-256 mismatch: expected " + expected_sha + " got " + got_sha);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "SHA-256 mismatch");
+    }
+
+    if (overwrite) {
+        (void)unlink(final_path.c_str());
+    }
+    if (rename(tmp_path.c_str(), final_path.c_str()) != 0) {
+        (void)unlink(tmp_path.c_str());
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to finalize file");
+    }
+
+    std::string response = "{\"path\":\"/models/" + name_s + "\",\"bytes\":" + std::to_string(bytes) + ",\"sha256\":\"" + got_sha + "\"}";
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, response.c_str(), response.size());
+    return ESP_OK;
+}
+
 
 void register_server_ota_uri(httpd_handle_t server)
 {
@@ -1391,6 +1595,12 @@ void register_server_ota_uri(httpd_handle_t server)
     camuri.uri       = "/reboot";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_reboot);
     camuri.user_ctx  = (void*) "Reboot";    
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.method    = HTTP_GET;
+    camuri.uri       = "/models/download";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_models_download);
+    camuri.user_ctx  = (void*) "Download model";
     httpd_register_uri_handler(server, &camuri);
 
 }

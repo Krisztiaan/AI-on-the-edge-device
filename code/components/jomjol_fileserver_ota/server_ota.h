@@ -18,4 +18,7 @@ void doRebootOTA();
 void hard_restart();
 void CheckUpdate();
 
+// Downloads a model from `url` to `/spiffs/models/<name>` and optionally verifies SHA-256.
+// Endpoint is exposed via `/models/download?url=...&name=...&sha256=...&overwrite=1`.
+
 #endif //SERVEROTA_H
