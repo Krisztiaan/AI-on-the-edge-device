@@ -72,17 +72,46 @@ FILE(GLOB_RECURSE app_sources
 
 file(GLOB ui_embed_files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "ui/*")
 
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND)
+    set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+else()
+    find_program(PYTHON_EXECUTABLE NAMES python3 python)
+endif()
+if (NOT PYTHON_EXECUTABLE)
+    message(FATAL_ERROR "Python is required to gzip embedded UI assets")
+endif()
+
 # PlatformIO's ESP-IDF integration may try to compile the generated
 # `<name>.S` sources before the IDF "embed files" custom commands run.
 # Pre-generate the `.S` files during CMake configure so they exist.
 set(embed_script "${IDF_PATH}/tools/cmake/scripts/data_file_embed_asm.cmake")
+
+set(ui_gz_dir "${CMAKE_BINARY_DIR}/ui_gz")
+file(MAKE_DIRECTORY "${ui_gz_dir}")
+
+set(ui_embed_files_gz "")
 foreach(ui_file IN LISTS ui_embed_files)
     get_filename_component(ui_name "${ui_file}" NAME) # e.g. "common.js"
     set(ui_in "${CMAKE_CURRENT_SOURCE_DIR}/${ui_file}")
-    set(ui_out "${CMAKE_BINARY_DIR}/${ui_name}.S")
+
+    set(ui_gz "${ui_gz_dir}/${ui_name}.gz")
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} -c
+                "import gzip, pathlib, sys; data = pathlib.Path(sys.argv[1]).read_bytes(); out = pathlib.Path(sys.argv[2]); out.parent.mkdir(parents=True, exist_ok=True); f = gzip.GzipFile(filename='', mode='wb', fileobj=out.open('wb'), mtime=0); f.write(data); f.close()"
+                ${ui_in} ${ui_gz}
+        RESULT_VARIABLE gzip_res
+    )
+    if (NOT gzip_res EQUAL 0)
+        message(FATAL_ERROR "Failed to gzip embedded asset: ${ui_gz} from ${ui_in}")
+    endif()
+
+    list(APPEND ui_embed_files_gz "${ui_gz}")
+
+    set(ui_out "${CMAKE_BINARY_DIR}/${ui_name}.gz.S")
     execute_process(
         COMMAND "${CMAKE_COMMAND}"
-                -D DATA_FILE=${ui_in}
+                -D DATA_FILE=${ui_gz}
                 -D SOURCE_FILE=${ui_out}
                 -D FILE_TYPE=BINARY
                 -P "${embed_script}"
@@ -97,5 +126,5 @@ idf_component_register(
     SRCS ${app_sources}
     INCLUDE_DIRS "."
     REQUIRES esp_psram
-    EMBED_FILES ${ui_embed_files}
+    EMBED_FILES ${ui_embed_files_gz}
 )

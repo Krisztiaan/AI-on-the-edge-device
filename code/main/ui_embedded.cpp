@@ -22,58 +22,58 @@ struct EmbeddedFile
     const uint8_t *end;
 };
 
-extern const uint8_t _binary_common_js_start[];            extern const uint8_t _binary_common_js_end[];
-extern const uint8_t _binary_data_html_start[];            extern const uint8_t _binary_data_html_end[];
-extern const uint8_t _binary_edit_alignment_html_start[];  extern const uint8_t _binary_edit_alignment_html_end[];
-extern const uint8_t _binary_edit_analog_html_start[];     extern const uint8_t _binary_edit_analog_html_end[];
-extern const uint8_t _binary_edit_config_raw_html_start[]; extern const uint8_t _binary_edit_config_raw_html_end[];
-extern const uint8_t _binary_edit_config_template_html_start[]; extern const uint8_t _binary_edit_config_template_html_end[];
-extern const uint8_t _binary_edit_digits_html_start[];     extern const uint8_t _binary_edit_digits_html_end[];
-extern const uint8_t _binary_edit_reference_html_start[];  extern const uint8_t _binary_edit_reference_html_end[];
-extern const uint8_t _binary_edit_style_css_start[];       extern const uint8_t _binary_edit_style_css_end[];
-extern const uint8_t _binary_file_server_css_start[];      extern const uint8_t _binary_file_server_css_end[];
-extern const uint8_t _binary_file_server_js_start[];       extern const uint8_t _binary_file_server_js_end[];
-extern const uint8_t _binary_firework_css_start[];         extern const uint8_t _binary_firework_css_end[];
-extern const uint8_t _binary_firework_js_start[];          extern const uint8_t _binary_firework_js_end[];
-extern const uint8_t _binary_index_html_start[];           extern const uint8_t _binary_index_html_end[];
-extern const uint8_t _binary_info_html_start[];            extern const uint8_t _binary_info_html_end[];
-extern const uint8_t _binary_log_html_start[];             extern const uint8_t _binary_log_html_end[];
-extern const uint8_t _binary_md5_min_js_start[];           extern const uint8_t _binary_md5_min_js_end[];
-extern const uint8_t _binary_ota_page_html_start[];        extern const uint8_t _binary_ota_page_html_end[];
-extern const uint8_t _binary_overview_html_start[];        extern const uint8_t _binary_overview_html_end[];
-extern const uint8_t _binary_prevalue_set_html_start[];    extern const uint8_t _binary_prevalue_set_html_end[];
-extern const uint8_t _binary_readconfigcommon_js_start[];  extern const uint8_t _binary_readconfigcommon_js_end[];
-extern const uint8_t _binary_readconfigparam_js_start[];   extern const uint8_t _binary_readconfigparam_js_end[];
-extern const uint8_t _binary_reboot_page_html_start[];     extern const uint8_t _binary_reboot_page_html_end[];
-extern const uint8_t _binary_style_css_start[];            extern const uint8_t _binary_style_css_end[];
-extern const uint8_t _binary_timezones_html_start[];       extern const uint8_t _binary_timezones_html_end[];
+extern const uint8_t _binary_common_js_gz_start[];            extern const uint8_t _binary_common_js_gz_end[];
+extern const uint8_t _binary_data_html_gz_start[];            extern const uint8_t _binary_data_html_gz_end[];
+extern const uint8_t _binary_edit_alignment_html_gz_start[];  extern const uint8_t _binary_edit_alignment_html_gz_end[];
+extern const uint8_t _binary_edit_analog_html_gz_start[];     extern const uint8_t _binary_edit_analog_html_gz_end[];
+extern const uint8_t _binary_edit_config_raw_html_gz_start[]; extern const uint8_t _binary_edit_config_raw_html_gz_end[];
+extern const uint8_t _binary_edit_config_template_html_gz_start[]; extern const uint8_t _binary_edit_config_template_html_gz_end[];
+extern const uint8_t _binary_edit_digits_html_gz_start[];     extern const uint8_t _binary_edit_digits_html_gz_end[];
+extern const uint8_t _binary_edit_reference_html_gz_start[];  extern const uint8_t _binary_edit_reference_html_gz_end[];
+extern const uint8_t _binary_edit_style_css_gz_start[];       extern const uint8_t _binary_edit_style_css_gz_end[];
+extern const uint8_t _binary_file_server_css_gz_start[];      extern const uint8_t _binary_file_server_css_gz_end[];
+extern const uint8_t _binary_file_server_js_gz_start[];       extern const uint8_t _binary_file_server_js_gz_end[];
+extern const uint8_t _binary_firework_css_gz_start[];         extern const uint8_t _binary_firework_css_gz_end[];
+extern const uint8_t _binary_firework_js_gz_start[];          extern const uint8_t _binary_firework_js_gz_end[];
+extern const uint8_t _binary_index_html_gz_start[];           extern const uint8_t _binary_index_html_gz_end[];
+extern const uint8_t _binary_info_html_gz_start[];            extern const uint8_t _binary_info_html_gz_end[];
+extern const uint8_t _binary_log_html_gz_start[];             extern const uint8_t _binary_log_html_gz_end[];
+extern const uint8_t _binary_md5_min_js_gz_start[];           extern const uint8_t _binary_md5_min_js_gz_end[];
+extern const uint8_t _binary_ota_page_html_gz_start[];        extern const uint8_t _binary_ota_page_html_gz_end[];
+extern const uint8_t _binary_overview_html_gz_start[];        extern const uint8_t _binary_overview_html_gz_end[];
+extern const uint8_t _binary_prevalue_set_html_gz_start[];    extern const uint8_t _binary_prevalue_set_html_gz_end[];
+extern const uint8_t _binary_readconfigcommon_js_gz_start[];  extern const uint8_t _binary_readconfigcommon_js_gz_end[];
+extern const uint8_t _binary_readconfigparam_js_gz_start[];   extern const uint8_t _binary_readconfigparam_js_gz_end[];
+extern const uint8_t _binary_reboot_page_html_gz_start[];     extern const uint8_t _binary_reboot_page_html_gz_end[];
+extern const uint8_t _binary_style_css_gz_start[];            extern const uint8_t _binary_style_css_gz_end[];
+extern const uint8_t _binary_timezones_html_gz_start[];       extern const uint8_t _binary_timezones_html_gz_end[];
 
 static const EmbeddedFile kFiles[] = {
-    {"common.js", _binary_common_js_start, _binary_common_js_end},
-    {"data.html", _binary_data_html_start, _binary_data_html_end},
-    {"edit_alignment.html", _binary_edit_alignment_html_start, _binary_edit_alignment_html_end},
-    {"edit_analog.html", _binary_edit_analog_html_start, _binary_edit_analog_html_end},
-    {"edit_config_raw.html", _binary_edit_config_raw_html_start, _binary_edit_config_raw_html_end},
-    {"edit_config_template.html", _binary_edit_config_template_html_start, _binary_edit_config_template_html_end},
-    {"edit_digits.html", _binary_edit_digits_html_start, _binary_edit_digits_html_end},
-    {"edit_reference.html", _binary_edit_reference_html_start, _binary_edit_reference_html_end},
-    {"edit_style.css", _binary_edit_style_css_start, _binary_edit_style_css_end},
-    {"file_server.css", _binary_file_server_css_start, _binary_file_server_css_end},
-    {"file_server.js", _binary_file_server_js_start, _binary_file_server_js_end},
-    {"firework.css", _binary_firework_css_start, _binary_firework_css_end},
-    {"firework.js", _binary_firework_js_start, _binary_firework_js_end},
-    {"index.html", _binary_index_html_start, _binary_index_html_end},
-    {"info.html", _binary_info_html_start, _binary_info_html_end},
-    {"log.html", _binary_log_html_start, _binary_log_html_end},
-    {"md5.min.js", _binary_md5_min_js_start, _binary_md5_min_js_end},
-    {"ota_page.html", _binary_ota_page_html_start, _binary_ota_page_html_end},
-    {"overview.html", _binary_overview_html_start, _binary_overview_html_end},
-    {"prevalue_set.html", _binary_prevalue_set_html_start, _binary_prevalue_set_html_end},
-    {"readconfigcommon.js", _binary_readconfigcommon_js_start, _binary_readconfigcommon_js_end},
-    {"readconfigparam.js", _binary_readconfigparam_js_start, _binary_readconfigparam_js_end},
-    {"reboot_page.html", _binary_reboot_page_html_start, _binary_reboot_page_html_end},
-    {"style.css", _binary_style_css_start, _binary_style_css_end},
-    {"timezones.html", _binary_timezones_html_start, _binary_timezones_html_end},
+    {"common.js", _binary_common_js_gz_start, _binary_common_js_gz_end},
+    {"data.html", _binary_data_html_gz_start, _binary_data_html_gz_end},
+    {"edit_alignment.html", _binary_edit_alignment_html_gz_start, _binary_edit_alignment_html_gz_end},
+    {"edit_analog.html", _binary_edit_analog_html_gz_start, _binary_edit_analog_html_gz_end},
+    {"edit_config_raw.html", _binary_edit_config_raw_html_gz_start, _binary_edit_config_raw_html_gz_end},
+    {"edit_config_template.html", _binary_edit_config_template_html_gz_start, _binary_edit_config_template_html_gz_end},
+    {"edit_digits.html", _binary_edit_digits_html_gz_start, _binary_edit_digits_html_gz_end},
+    {"edit_reference.html", _binary_edit_reference_html_gz_start, _binary_edit_reference_html_gz_end},
+    {"edit_style.css", _binary_edit_style_css_gz_start, _binary_edit_style_css_gz_end},
+    {"file_server.css", _binary_file_server_css_gz_start, _binary_file_server_css_gz_end},
+    {"file_server.js", _binary_file_server_js_gz_start, _binary_file_server_js_gz_end},
+    {"firework.css", _binary_firework_css_gz_start, _binary_firework_css_gz_end},
+    {"firework.js", _binary_firework_js_gz_start, _binary_firework_js_gz_end},
+    {"index.html", _binary_index_html_gz_start, _binary_index_html_gz_end},
+    {"info.html", _binary_info_html_gz_start, _binary_info_html_gz_end},
+    {"log.html", _binary_log_html_gz_start, _binary_log_html_gz_end},
+    {"md5.min.js", _binary_md5_min_js_gz_start, _binary_md5_min_js_gz_end},
+    {"ota_page.html", _binary_ota_page_html_gz_start, _binary_ota_page_html_gz_end},
+    {"overview.html", _binary_overview_html_gz_start, _binary_overview_html_gz_end},
+    {"prevalue_set.html", _binary_prevalue_set_html_gz_start, _binary_prevalue_set_html_gz_end},
+    {"readconfigcommon.js", _binary_readconfigcommon_js_gz_start, _binary_readconfigcommon_js_gz_end},
+    {"readconfigparam.js", _binary_readconfigparam_js_gz_start, _binary_readconfigparam_js_gz_end},
+    {"reboot_page.html", _binary_reboot_page_html_gz_start, _binary_reboot_page_html_gz_end},
+    {"style.css", _binary_style_css_gz_start, _binary_style_css_gz_end},
+    {"timezones.html", _binary_timezones_html_gz_start, _binary_timezones_html_gz_end},
 };
 
 static const EmbeddedFile *find_embedded(const char *name)
@@ -120,7 +120,21 @@ esp_err_t ui_embedded_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
     }
 
+    // Most clients (browsers) advertise gzip; if not, assume gzip is still OK.
+    bool accepts_gzip = true;
+    char ae[96];
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", ae, sizeof(ae)) == ESP_OK) {
+        accepts_gzip = strstr(ae, "gzip") != NULL;
+    }
+    if (!accepts_gzip) {
+        httpd_resp_set_status(req, "406 Not Acceptable");
+        httpd_resp_set_type(req, "text/plain");
+        return httpd_resp_sendstr(req, "Client must support gzip");
+    }
+
     httpd_resp_set_type(req, content_type_for_name(file->name));
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Vary", "Accept-Encoding");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, (const char *)file->start, (size_t)(file->end - file->start));
 }
