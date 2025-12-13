@@ -1,68 +1,75 @@
 /**
- * Firework displays short notifications at top of page,
- * then fades out a few seconds later (no user interaction)
- * Source: https://www.jqueryscript.net/other/Simple-Top-Notification-Plugin-with-jQuery-firework-js.html
- *         https://github.com/smalldogs/fireworkjs
- * @param   m   string    message
- * @param   t   string    (optional) message type ('success', 'danger')
- * @param   l   number    (optional) length of time to display message in milliseconds
+ * firework.launch(message, type, durationMs)
+ *
+ * Minimal, dependency-free notification widget for the local UI.
+ * Kept API-compatible with the previous jQuery-based implementation.
  */
- ;(function ($, window) {
+(function (window) {
   "use strict";
 
+  function asString(value) {
+    return typeof value === "string" ? value : String(value ?? "");
+  }
+
+  function getTopOffsetPx() {
+    var offset = 10;
+    var nodes = document.querySelectorAll(".firework");
+    for (var i = 0; i < nodes.length; i++) {
+      offset += nodes[i].offsetHeight + 10;
+    }
+    return offset;
+  }
+
+  function removeNode(node) {
+    if (!node) return;
+    node.style.opacity = "0";
+    window.setTimeout(function () {
+      if (node && node.parentNode) node.parentNode.removeChild(node);
+    }, 250);
+  }
+
   window.firework = {
-    launch: function(m, t, l) {
-      if (typeof m != 'string') {
-        console.error('Error: Call to firework() without a message');
-        return false
+    launch: function (message, type, durationMs) {
+      if (typeof message !== "string") {
+        console.error("firework.launch called without a string message");
+        message = asString(message);
       }
 
-      var c = 'firework' // css class(es)
-        , p = 10 // pixels from top or page to display
-        , d = new Date()
-        , s = d.getTime() // used to create unique element ids
-        , fid = "firework-"+ s; // firework id
+      var element = document.createElement("div");
+      element.className = "firework" + (type ? " " + type : "");
+      element.style.top = getTopOffsetPx() + "px";
+      element.style.opacity = "0";
 
-      if (typeof t !== 'undefined') c += ' '+ t; // add any user defined classes
+      var close = document.createElement("a");
+      close.setAttribute("role", "button");
+      close.setAttribute("tabindex", "0");
+      close.style.cssText = "float:right; padding:0 6px; font-size:20px; line-height:20px; cursor:pointer;";
+      close.textContent = "×";
+      close.onclick = function () { removeNode(element); };
+      close.onkeydown = function (e) {
+        if (e.key === "Enter" || e.key === " ") removeNode(element);
+      };
 
-      $('.firework').each(function(){ // account for existing fireworks and move new one below
-        p += parseInt($(this).height()) + 30
-      });
+      var text = document.createElement("span");
+      text.innerHTML = message;
 
-      $('<div id="'+ fid +'" class="'+ c +'">'+ m +'<a onclick="firework.remove(\'#'+ fid +'\')"><img style="height:28px;" src=close.png></a></div>')
-        .appendTo('body')
-        .animate({
-          opacity: 1,
-          top: p +'px'
-        });
+      element.appendChild(close);
+      element.appendChild(text);
+      document.body.appendChild(element);
 
-      setTimeout(function(){ firework.remove("#"+ fid) }, typeof l == "number" ? l : 1500);
+      // Fade in
+      window.setTimeout(function () { element.style.opacity = "1"; }, 0);
+
+      var delay = typeof durationMs === "number" ? durationMs : 1500;
+      window.setTimeout(function () { removeNode(element); }, delay);
     },
 
-    remove : function(t) {
-      $(t)
-        .animate({
-          opacity: 0
-        })
-        .promise()
-        .done(function(){
-          $(t).remove()
-        })
+    remove: function (selectorOrNode) {
+      if (typeof selectorOrNode === "string") {
+        removeNode(document.querySelector(selectorOrNode));
+      } else {
+        removeNode(selectorOrNode);
+      }
     },
-
-    sticky : function(m, t, l) {
-      $.cookie("firework", '{ "message" : "'+ m +'", "type" : "'+ t +'", "display" : "'+ l +'" }', { path: '/' })
-    }
   };
-
-  // checks for firework cookie on dom ready
-  $(function() {
-    if (typeof $.cookie == "function") {
-      if ($.cookie("firework")) {
-        var ex = $.parseJSON($.cookie("firework"))
-        setTimeout(function(){ firework.launch(ex.message, ex.type, parseInt(ex.display) > 0 ? parseInt(ex.display) : null) }, 1000)
-        $.cookie("firework", null, { path: '/'})
-      }
-    }
-  });
-})(jQuery, window);
+})(window);
