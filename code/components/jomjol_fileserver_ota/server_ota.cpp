@@ -31,6 +31,8 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <fcntl.h>
+
 #include "MainFlowControl.h"
 #include "server_file.h"
 #include "server_GPIO.h"
@@ -333,6 +335,107 @@ static esp_err_t http_get_to_file_sha256(const std::string& url, const std::stri
     mbedtls_sha256_finish(&sha, digest);
     mbedtls_sha256_free(&sha);
     out_sha256 = sha256_hex(digest);
+    return ESP_OK;
+}
+
+static bool write_text_file_atomic(const std::string &path, const std::string &content)
+{
+    std::string tmp = path + ".tmp";
+    FILE *f = fopen(tmp.c_str(), "wb");
+    if (!f) {
+        return false;
+    }
+    if (!content.empty()) {
+        if (fwrite(content.data(), 1, content.size(), f) != content.size()) {
+            fclose(f);
+            unlink(tmp.c_str());
+            return false;
+        }
+    }
+    fclose(f);
+    if (rename(tmp.c_str(), path.c_str()) != 0) {
+        unlink(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+static const char *kActiveModelFile = "/spiffs/config/active_model.txt";
+
+esp_err_t DownloadModel(const std::string &url,
+                        const std::string &name,
+                        const std::string &expected_sha256,
+                        bool overwrite,
+                        bool set_active,
+                        std::string &out_sha256,
+                        size_t &out_bytes,
+                        std::string &out_error)
+{
+    out_error.clear();
+    out_sha256.clear();
+    out_bytes = 0;
+
+    if (url.empty()) {
+        out_error = "Missing url";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const std::string name_s = name.empty() ? "model.tflite.gz" : name;
+    if (name_s.find('/') != std::string::npos || name_s.find("..") != std::string::npos) {
+        out_error = "Invalid name";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const std::string expected = to_lower_ascii(expected_sha256);
+    if (!is_hex_sha256(expected)) {
+        out_error = "Invalid sha256 (expected 64 hex chars)";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    (void)MakeDir("/spiffs/models");
+    (void)MakeDir("/spiffs/config");
+    std::string final_path = std::string("/spiffs/models/") + name_s;
+    std::string tmp_path = final_path + ".part";
+
+    struct stat st;
+    if (!overwrite && stat(final_path.c_str(), &st) == 0) {
+        out_error = "File exists (use overwrite=1)";
+        return ESP_FAIL;
+    }
+    (void)unlink(tmp_path.c_str());
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Model download: " + url + " -> " + final_path);
+
+    esp_err_t err = http_get_to_file_sha256(url, tmp_path, 5 * 1024 * 1024, out_sha256, out_bytes);
+    if (err != ESP_OK) {
+        out_error = "Download failed";
+        (void)unlink(tmp_path.c_str());
+        return err;
+    }
+
+    if (!expected.empty() && out_sha256 != expected) {
+        out_error = "SHA-256 mismatch";
+        (void)unlink(tmp_path.c_str());
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    if (overwrite) {
+        (void)unlink(final_path.c_str());
+    }
+    if (rename(tmp_path.c_str(), final_path.c_str()) != 0) {
+        out_error = "Failed to finalize file";
+        (void)unlink(tmp_path.c_str());
+        return ESP_FAIL;
+    }
+
+    if (set_active) {
+        const std::string active = std::string("/models/") + name_s + "\n";
+        if (!write_text_file_atomic(kActiveModelFile, active)) {
+            out_error = "Failed to write active model marker";
+            return ESP_FAIL;
+        }
+    }
+
     return ESP_OK;
 }
 
@@ -1505,11 +1608,13 @@ static esp_err_t handler_models_download(httpd_req_t *req)
     char name[96];
     char sha[80];
     char overwrite_buf[8];
+    char set_active_buf[8];
 
     url[0] = '\0';
     name[0] = '\0';
     sha[0] = '\0';
     overwrite_buf[0] = '\0';
+    set_active_buf[0] = '\0';
 
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query string");
@@ -1518,61 +1623,33 @@ static esp_err_t handler_models_download(httpd_req_t *req)
     (void)httpd_query_key_value(query, "name", name, sizeof(name));
     (void)httpd_query_key_value(query, "sha256", sha, sizeof(sha));
     (void)httpd_query_key_value(query, "overwrite", overwrite_buf, sizeof(overwrite_buf));
+    (void)httpd_query_key_value(query, "set_active", set_active_buf, sizeof(set_active_buf));
 
-    if (url[0] == '\0' || name[0] == '\0') {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Required: url, name");
-    }
-
-    std::string name_s(name);
-    if (name_s.find('/') != std::string::npos || name_s.find("..") != std::string::npos) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid name");
-    }
-
-    std::string expected_sha = to_lower_ascii(std::string(sha));
-    if (!is_hex_sha256(expected_sha)) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid sha256 (expected 64 hex chars)");
+    if (url[0] == '\0') {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Required: url");
     }
 
     const bool overwrite = (overwrite_buf[0] == '1' || overwrite_buf[0] == 'y' || overwrite_buf[0] == 'Y' ||
                             overwrite_buf[0] == 't' || overwrite_buf[0] == 'T');
+    const bool set_active = (set_active_buf[0] == '1' || set_active_buf[0] == 'y' || set_active_buf[0] == 'Y' ||
+                             set_active_buf[0] == 't' || set_active_buf[0] == 'T');
 
-    (void)MakeDir("/spiffs/models");
-    std::string final_path = std::string("/spiffs/models/") + name_s;
-    std::string tmp_path = final_path + ".part";
-
-    struct stat st;
-    if (!overwrite && stat(final_path.c_str(), &st) == 0) {
-        httpd_resp_set_status(req, "409 Conflict");
-        httpd_resp_set_type(req, "text/plain");
-        return httpd_resp_sendstr(req, "File exists (use overwrite=1)");
-    }
-    (void)unlink(tmp_path.c_str());
-
-    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Model download: " + std::string(url) + " -> " + final_path);
-
-    std::string got_sha;
+    std::string got_sha, err_str;
     size_t bytes = 0;
-    esp_err_t err = http_get_to_file_sha256(url, tmp_path, 5 * 1024 * 1024, got_sha, bytes);
+    esp_err_t err = DownloadModel(url, name, sha, overwrite, set_active, got_sha, bytes, err_str);
     if (err != ESP_OK) {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model download failed (" + std::string(esp_err_to_name(err)) + ")");
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Download failed");
+        if (err_str.find("exists") != std::string::npos) {
+            httpd_resp_set_status(req, "409 Conflict");
+            httpd_resp_set_type(req, "text/plain");
+            return httpd_resp_sendstr(req, err_str.c_str());
+        }
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, err_str.empty() ? "Model download failed" : err_str.c_str());
     }
 
-    if (!expected_sha.empty() && got_sha != expected_sha) {
-        (void)unlink(tmp_path.c_str());
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model SHA-256 mismatch: expected " + expected_sha + " got " + got_sha);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "SHA-256 mismatch");
-    }
-
-    if (overwrite) {
-        (void)unlink(final_path.c_str());
-    }
-    if (rename(tmp_path.c_str(), final_path.c_str()) != 0) {
-        (void)unlink(tmp_path.c_str());
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to finalize file");
-    }
-
-    std::string response = "{\"path\":\"/models/" + name_s + "\",\"bytes\":" + std::to_string(bytes) + ",\"sha256\":\"" + got_sha + "\"}";
+    const std::string name_s = (name[0] == '\0') ? "model.tflite.gz" : std::string(name);
+    std::string response = "{\"path\":\"/models/" + name_s + "\",\"bytes\":" + std::to_string(bytes) + ",\"sha256\":\"" + got_sha + "\"";
+    if (set_active) response += ",\"active\":true";
+    response += "}";
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, response.c_str(), response.size());

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" xml:lang="en">
+<head>
+    <title>Model</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css?v=$COMMIT_HASH" type="text/css" >
+    <script type="text/javascript" src="common.js?v=$COMMIT_HASH"></script>
+</head>
+<body>
+<div class="content">
+    <h2>Model download</h2>
+    <p>Downloads a single model to <code>/spiffs/models</code> and optionally marks it active for <code>MODEL=AUTO</code>.</p>
+
+    <table>
+        <tr><td style="width:140px">URL</td><td><input id="m_url" style="width: 100%" placeholder="https://.../model.tflite.gz"></td></tr>
+        <tr><td>Name</td><td><input id="m_name" style="width: 100%" value="model.tflite.gz"></td></tr>
+        <tr><td>SHA-256</td><td><input id="m_sha" style="width: 100%" placeholder="optional 64-hex"></td></tr>
+        <tr><td>Overwrite</td><td><input id="m_overwrite" type="checkbox"></td></tr>
+        <tr><td>Set active</td><td><input id="m_active" type="checkbox" checked></td></tr>
+    </table>
+
+    <p>
+        <button onclick="downloadModel()">Download</button>
+    </p>
+
+    <pre id="out" style="white-space: pre-wrap; border: 1px solid #ddd; padding: 10px;"></pre>
+</div>
+
+<script>
+async function downloadModel() {
+    const url = document.getElementById('m_url').value.trim();
+    const name = document.getElementById('m_name').value.trim();
+    const sha = document.getElementById('m_sha').value.trim();
+    const overwrite = document.getElementById('m_overwrite').checked ? '1' : '0';
+    const active = document.getElementById('m_active').checked ? '1' : '0';
+
+    if (!url) {
+        document.getElementById('out').textContent = 'URL is required';
+        return;
+    }
+
+    const qs = new URLSearchParams();
+    qs.set('url', url);
+    if (name) qs.set('name', name);
+    if (sha) qs.set('sha256', sha);
+    if (overwrite === '1') qs.set('overwrite', '1');
+    if (active === '1') qs.set('set_active', '1');
+
+    const endpoint = getDomainname() + '/models/download?' + qs.toString();
+    document.getElementById('out').textContent = 'Fetching: ' + endpoint + '\\n';
+
+    const r = await fetch(endpoint, {method: 'GET'});
+    const text = await r.text();
+    document.getElementById('out').textContent += 'HTTP ' + r.status + '\\n' + text;
+}
+</script>
+</body>
+</html>

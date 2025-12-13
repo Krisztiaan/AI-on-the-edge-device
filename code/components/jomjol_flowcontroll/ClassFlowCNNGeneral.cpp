@@ -11,6 +11,19 @@
 
 static const char* TAG = "CNN";
 
+static std::string read_first_line(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return "";
+    char buf[256];
+    if (!fgets(buf, sizeof(buf), f)) {
+        fclose(f);
+        return "";
+    }
+    fclose(f);
+    return trim(std::string(buf));
+}
+
 //#ifdef CONFIG_HEAP_TRACING_STANDALONE
 #ifdef HEAP_TRACING_CLASS_FLOW_CNN_GENERAL_DO_ALING_AND_CUT
     #include <esp_heap_trace.h>
@@ -19,7 +32,7 @@ static const char* TAG = "CNN";
 #endif
 
 ClassFlowCNNGeneral::ClassFlowCNNGeneral(ClassFlowAlignment *_flowalign, t_CNNType _cnntype) : ClassFlowImage(NULL, TAG) {
-    string cnnmodelfile = "";
+    this->cnnmodelfile = "";
     modelxsize = 1;
     modelysize = 1;
     CNNGoodThreshold = 0.0;
@@ -372,6 +385,16 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
 
         if ((toUpper(splitted[0]) == "SAVEALLFILES") && (splitted.size() > 1)) {
             SaveAllFiles = alphanumericToBoolean(splitted[1]);
+        }
+    }
+
+    // Single-model convenience: allow MODEL=AUTO (or unset) to use the active model marker.
+    if (cnnmodelfile.empty() || toUpper(cnnmodelfile) == "AUTO") {
+        const std::string active = read_first_line("/spiffs/config/active_model.txt");
+        if (!active.empty() && active[0] == '/') {
+            cnnmodelfile = active;
+        } else {
+            cnnmodelfile = "/models/model.tflite.gz";
         }
     }
 

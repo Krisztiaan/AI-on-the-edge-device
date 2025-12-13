@@ -44,6 +44,7 @@ extern const uint8_t _binary_overview_html_gz_start[];        extern const uint8
 extern const uint8_t _binary_prevalue_set_html_gz_start[];    extern const uint8_t _binary_prevalue_set_html_gz_end[];
 extern const uint8_t _binary_readconfigcommon_js_gz_start[];  extern const uint8_t _binary_readconfigcommon_js_gz_end[];
 extern const uint8_t _binary_readconfigparam_js_gz_start[];   extern const uint8_t _binary_readconfigparam_js_gz_end[];
+extern const uint8_t _binary_model_html_gz_start[];           extern const uint8_t _binary_model_html_gz_end[];
 extern const uint8_t _binary_reboot_page_html_gz_start[];     extern const uint8_t _binary_reboot_page_html_gz_end[];
 extern const uint8_t _binary_style_css_gz_start[];            extern const uint8_t _binary_style_css_gz_end[];
 extern const uint8_t _binary_timezones_html_gz_start[];       extern const uint8_t _binary_timezones_html_gz_end[];
@@ -71,6 +72,7 @@ static const EmbeddedFile kFiles[] = {
     {"prevalue_set.html", _binary_prevalue_set_html_gz_start, _binary_prevalue_set_html_gz_end},
     {"readconfigcommon.js", _binary_readconfigcommon_js_gz_start, _binary_readconfigcommon_js_gz_end},
     {"readconfigparam.js", _binary_readconfigparam_js_gz_start, _binary_readconfigparam_js_gz_end},
+    {"model.html", _binary_model_html_gz_start, _binary_model_html_gz_end},
     {"reboot_page.html", _binary_reboot_page_html_gz_start, _binary_reboot_page_html_gz_end},
     {"style.css", _binary_style_css_gz_start, _binary_style_css_gz_end},
     {"timezones.html", _binary_timezones_html_gz_start, _binary_timezones_html_gz_end},
