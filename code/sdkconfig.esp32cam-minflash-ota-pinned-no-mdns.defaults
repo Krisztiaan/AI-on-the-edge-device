@@ -1,0 +1,8 @@
+# Reduce TLS flash bloat for OTA downloads by disabling the built-in certificate bundle.
+# The application supplies a pinned CA PEM via `server_ota.cpp` instead.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+
+# Client-only TLS (we don't serve HTTPS).
+CONFIG_MBEDTLS_TLS_SERVER_AND_CLIENT=n
+CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
+

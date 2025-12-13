@@ -143,6 +143,10 @@
         #define JOMJOL_MQTT_USE_CERT_BUNDLE 1
     #endif
 
+    #ifndef JOMJOL_ENABLE_MDNS
+        #define JOMJOL_ENABLE_MDNS 1
+    #endif
+
     #if JOMJOL_ENABLE_STBI_WRITE
         #define ALGROI_LOAD_FROM_MEM_AS_JPG // Load ALG_ROI.JPG as rendered JPG from RAM
     #endif

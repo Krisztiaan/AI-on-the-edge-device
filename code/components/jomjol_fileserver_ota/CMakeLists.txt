@@ -1,4 +1,11 @@
-FILE(GLOB_RECURSE app_sources ${CMAKE_CURRENT_SOURCE_DIR}/*.*)
+set(app_sources
+    md5.cpp
+    server_file.cpp
+    server_help.cpp
+    server_ota.cpp
+    miniz/miniz.c
+    third_party/ed25519-donna/ed25519.c
+)
 
 idf_component_register(SRCS ${app_sources}
                     INCLUDE_DIRS "." "../../include" "miniz"
