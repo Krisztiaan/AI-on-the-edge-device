@@ -6,11 +6,8 @@
 #include "Helper.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
-#include <iomanip>
-#include <sstream>
-#include <fstream>
-#include <iostream>
 #include <math.h>
 
 #ifdef __cplusplus
@@ -196,15 +193,54 @@ std::string FormatFileName(std::string input)
 
 std::size_t file_size(const std::string &file_name)
 {
-	std::ifstream file(file_name.c_str(), std::ios::in | std::ios::binary);
-
-	if (!file)
+	struct stat st;
+	if (stat(file_name.c_str(), &st) != 0)
 	{
 		return 0;
 	}
+	return static_cast<std::size_t>(st.st_size);
+}
 
-	file.seekg(0, std::ios::end);
-	return static_cast<std::size_t>(file.tellg());
+bool ReadFileToString(const std::string& file_name, std::string& out, size_t max_bytes)
+{
+	out.clear();
+
+	FILE* fp = fopen(file_name.c_str(), "rb");
+	if (!fp) {
+		return false;
+	}
+
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return false;
+	}
+
+	long size = ftell(fp);
+	if (size < 0) {
+		fclose(fp);
+		return false;
+	}
+
+	if ((size_t)size > max_bytes) {
+		fclose(fp);
+		return false;
+	}
+
+	if (fseek(fp, 0, SEEK_SET) != 0) {
+		fclose(fp);
+		return false;
+	}
+
+	out.resize((size_t)size);
+	size_t read = fread(out.data(), 1, out.size(), fp);
+	fclose(fp);
+
+	if (read != out.size()) {
+		out.clear();
+		return false;
+	}
+
+	return true;
 }
 
 void FindReplace(std::string &line, std::string &oldString, std::string &newString)
@@ -1047,20 +1083,14 @@ string SDCardParseManufacturerIDs(int id)
 
 string RundeOutput(double _in, int _anzNachkomma)
 {
-	std::stringstream stream;
-	int _zw = _in;
-	//    ESP_LOGD(TAG, "AnzNachkomma: %d", _anzNachkomma);
-
-	if (_anzNachkomma > 0)
-	{
-		stream << std::fixed << std::setprecision(_anzNachkomma) << _in;
+	char buf[64];
+	if (_anzNachkomma > 0) {
+		snprintf(buf, sizeof(buf), "%.*f", _anzNachkomma, _in);
 	}
-	else
-	{
-		stream << _zw;
+	else {
+		snprintf(buf, sizeof(buf), "%d", (int)_in);
 	}
-
-	return stream.str();
+	return std::string(buf);
 }
 
 string getMac(void)

@@ -3,8 +3,9 @@
 #ifndef HELPER_H
 #define HELPER_H
 
+#include <sys/types.h>
+#include <time.h>
 #include <string>
-#include <fstream>
 #include <vector>
 
 #include "sdmmc_cmd.h"
@@ -14,6 +15,7 @@ using namespace std;
 std::string FormatFileName(std::string input);
 std::size_t file_size(const std::string& file_name);
 void FindReplace(std::string& line, std::string& oldString, std::string& newString);
+bool ReadFileToString(const std::string& file_name, std::string& out, size_t max_bytes = 256 * 1024);
 
 bool CopyFile(string input, string output);
 bool DeleteFile(string filename);

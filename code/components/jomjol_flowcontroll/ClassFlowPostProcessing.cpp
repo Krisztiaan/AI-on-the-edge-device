@@ -3,9 +3,6 @@
 #include "ClassFlowTakeImage.h"
 #include "ClassLogFile.h"
 
-#include <iomanip>
-#include <sstream>
-
 #include <time.h>
 
 #include "time_sntp.h"

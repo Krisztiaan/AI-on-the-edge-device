@@ -1,5 +1,4 @@
 #ifdef ENABLE_INFLUXDB
-#include <sstream>
 #include "ClassFlowInfluxDBv2.h"
 #include "Helper.h"
 #include "connect_wlan.h"

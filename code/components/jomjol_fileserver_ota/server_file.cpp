@@ -56,7 +56,6 @@ struct file_server_data {
     char scratch[SERVER_FILER_SCRATCH_BUFSIZE];
 };
 
-#include <iostream>
 #include <sys/types.h>
 #include <dirent.h>
 

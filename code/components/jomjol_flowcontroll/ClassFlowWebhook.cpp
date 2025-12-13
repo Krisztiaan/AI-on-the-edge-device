@@ -1,5 +1,4 @@
 #ifdef ENABLE_WEBHOOK
-#include <sstream>
 #include "ClassFlowWebhook.h"
 #include "Helper.h"
 #include "connect_wlan.h"
