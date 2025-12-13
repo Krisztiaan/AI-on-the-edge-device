@@ -11,6 +11,10 @@
 #include "MainFlowControl.h"
 #include "cJSON.h"
 #include "../../include/defines.h"
+#include "sdkconfig.h"
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+    #include "esp_crt_bundle.h"
+#endif
 
 #if DEBUG_DETAIL_ON
 #include "esp_timer.h"
@@ -312,13 +316,28 @@ int MQTT_Init() {
     mqtt_cfg.session.keepalive = keepalive;
     mqtt_cfg.buffer.size = 2048;                         // size of MQTT send/receive buffer
 
+    // Server certificate verification:
+    // - prefer user-provided CA cert (smallest + explicit),
+    // - otherwise fall back to the ESP-IDF certificate bundle (if enabled),
+    // - otherwise MQTT over TLS cannot verify the broker.
+    mqtt_cfg.broker.verification.skip_cert_common_name_check = !validateServerCert;
+
     if (caCert.length()) {
         mqtt_cfg.broker.verification.certificate = caCert.c_str();
         mqtt_cfg.broker.verification.certificate_len = caCert.length() + 1;
-
-        // Skip any validation of server certificate CN field, this reduces the
-        // security of TLS and makes the *MQTT* client susceptible to MITM attacks
-        mqtt_cfg.broker.verification.skip_cert_common_name_check = !validateServerCert;
+    }
+    else {
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+        if (JOMJOL_MQTT_USE_CERT_BUNDLE) {
+            mqtt_cfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+        }
+#endif
+        if (!mqtt_cfg.broker.verification.crt_bundle_attach) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "MQTT TLS enabled but no CA cert configured and certificate bundle is unavailable/disabled");
+            mqtt_enabled = false;
+            mqtt_initialized = false;
+            return 0;
+        }
     }
 
     if (clientCert.length() && clientKey.length()) {

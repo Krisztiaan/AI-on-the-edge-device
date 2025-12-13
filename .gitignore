@@ -5,6 +5,8 @@
 /sd-card/htm./.vscode/
 /code/build
 /code/.helper
+/code/sdkconfig.esp32cam-*
+!/code/sdkconfig.esp32cam-*.defaults
 /sd-card/html/debug/
 /firmware/
 version.txt

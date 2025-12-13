@@ -646,13 +646,18 @@ bool ClassFlowControll::ReadParameter(FILE* pfile, string& aktparamgraph)
 
 int ClassFlowControll::CleanTempFolder() {
     const char* folderPath = "/sdcard/img_tmp";
+
+#if !JOMJOL_ENABLE_IMAGE_PERSISTENCE
+    (void)folderPath;
+    return 0;
+#endif
     
     ESP_LOGD(TAG, "Clean up temporary folder to avoid damage of sdcard sectors: %s", folderPath);
     DIR *dir = opendir(folderPath);
 	
     if (!dir) {
-        ESP_LOGE(TAG, "Failed to stat dir: %s", folderPath);
-        return -1;
+        ESP_LOGW(TAG, "Temp folder not available: %s", folderPath);
+        return 0;
     }
 
     struct dirent *entry;

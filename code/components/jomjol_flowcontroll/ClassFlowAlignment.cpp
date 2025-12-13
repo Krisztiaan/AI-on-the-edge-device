@@ -161,9 +161,14 @@ string ClassFlowAlignment::getHTMLSingleStep(string host)
 {
     string result;
 
-    result = "<p>Rotated Image: </p> <p><img src=\"" + host + "/img_tmp/rot.jpg\"></p>\n";
-    result = result + "<p>Found Alignment: </p> <p><img src=\"" + host + "/img_tmp/rot_roi.jpg\"></p>\n";
-    result = result + "<p>Aligned Image: </p> <p><img src=\"" + host + "/img_tmp/alg.jpg\"></p>\n";
+    #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+        result = "<p>Rotated Image: </p> <p><img src=\"" + host + "/img_tmp/rot.jpg\"></p>\n";
+        result = result + "<p>Found Alignment: </p> <p><img src=\"" + host + "/img_tmp/rot_roi.jpg\"></p>\n";
+        result = result + "<p>Aligned Image: </p> <p><img src=\"" + host + "/img_tmp/alg.jpg\"></p>\n";
+    #else
+        result = "<p>Image previews disabled (no image persistence build).</p>\n";
+        result = result + "<p>Last captured image: </p> <p><img src=\"" + host + "/capture_last\"></p>\n";
+    #endif
     return result;
 }
 
@@ -224,7 +229,7 @@ bool ClassFlowAlignment::doFlow(string time)
             rt.Rotate(initialrotate);
         }
 
-        if (SaveAllFiles) {
+        if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
             AlignAndCutImage->SaveToFile(FormatFileName("/sdcard/img_tmp/rot.jpg"));
         }
     }
@@ -249,7 +254,7 @@ bool ClassFlowAlignment::doFlow(string time)
     }
 #endif
 
-    if (SaveAllFiles) {
+    if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
         AlignAndCutImage->SaveToFile(FormatFileName("/sdcard/img_tmp/alg.jpg"));
         ImageTMP->SaveToFile(FormatFileName("/sdcard/img_tmp/alg_roi.jpg"));
     }

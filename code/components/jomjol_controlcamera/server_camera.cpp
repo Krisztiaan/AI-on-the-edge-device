@@ -12,6 +12,8 @@
 
 #include "basic_auth.h"
 
+#include "last_jpeg_cache.h"
+
 #include "../../include/defines.h"
 
 static const char *TAG = "server_cam";
@@ -272,6 +274,11 @@ esp_err_t handler_capture_save_to_file(httpd_req_t *req)
     }
 }
 
+esp_err_t handler_capture_last(httpd_req_t *req)
+{
+    return last_jpeg_cache::send(req);
+}
+
 void register_server_camera_uri(httpd_handle_t server)
 {
 #ifdef DEBUG_DETAIL_ON
@@ -293,6 +300,11 @@ void register_server_camera_uri(httpd_handle_t server)
 
     camuri.uri = "/capture";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_capture);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/capture_last";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_capture_last);
     camuri.user_ctx = NULL;
     httpd_register_uri_handler(server, &camuri);
 

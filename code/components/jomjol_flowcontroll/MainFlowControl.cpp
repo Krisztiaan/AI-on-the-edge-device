@@ -712,7 +712,11 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
                             zw = std::to_string((int)htmlinfodig[i]->val);
                         }
 
-                        txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfodig[i]->filename + "\"></p></td>\n";
+                        #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+                            txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfodig[i]->filename + "\"></p></td>\n";
+                        #else
+                            txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4></td>\n";
+                        #endif
                     }
                     else
                     {
@@ -726,7 +730,11 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
                             zw = "NaN";
                         }
 
-                        txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfodig[i]->filename + "\"></p></td>\n";
+                        #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+                            txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfodig[i]->filename + "\"></p></td>\n";
+                        #else
+                            txt += "<td style=\"width: 100px\"><h4>" + zw + "</h4></td>\n";
+                        #endif
                     }
                     delete htmlinfodig[i];
                 }
@@ -755,7 +763,11 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
                         zw = "NaN";
                     }
 
-                    txt += "<td style=\"width: 150px;\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfoana[i]->filename + "\"></p></td>\n";
+                    #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+                        txt += "<td style=\"width: 150px;\"><h4>" + zw + "</h4><p><img src=\"/img_tmp/" + htmlinfoana[i]->filename + "\"></p></td>\n";
+                    #else
+                        txt += "<td style=\"width: 150px;\"><h4>" + zw + "</h4></td>\n";
+                    #endif
                     delete htmlinfoana[i];
                 }
 
@@ -776,7 +788,11 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
                 }
                 else
                 {
-                    txt += "<img src=\"/img_tmp/alg_roi.jpg\">\n";
+                    #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+                        txt += "<img src=\"/img_tmp/alg_roi.jpg\">\n";
+                    #else
+                        txt += "<img src=\"/capture_last\">\n";
+                    #endif
                 }
                 httpd_resp_sendstr_chunk(req, txt.c_str());
             }

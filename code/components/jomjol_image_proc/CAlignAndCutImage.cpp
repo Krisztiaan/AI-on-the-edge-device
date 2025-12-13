@@ -97,6 +97,15 @@ bool CAlignAndCutImage::Align(RefInfo *_temp1, RefInfo *_temp2)
 
 void CAlignAndCutImage::CutAndSave(std::string _template1, int x1, int y1, int dx, int dy)
 {
+#if !JOMJOL_ENABLE_IMAGE_PERSISTENCE || !JOMJOL_ENABLE_STBI_WRITE
+    (void)_template1;
+    (void)x1;
+    (void)y1;
+    (void)dx;
+    (void)dy;
+    LogFile.WriteToFile(ESP_LOG_WARN, TAG, "CutAndSave(file) disabled by build flags (persistence/write disabled)");
+    return;
+#else
 
     int x2, y2;
 
@@ -134,7 +143,8 @@ void CAlignAndCutImage::CutAndSave(std::string _template1, int x1, int y1, int d
 
     RGBImageRelease();
 
-    stbi_image_free(odata);
+    free_psram_heap(std::string(TAG) + "->odata", odata);
+#endif
 }
 
 void CAlignAndCutImage::CutAndSave(int x1, int y1, int dx, int dy, CImageBasis *_target)
