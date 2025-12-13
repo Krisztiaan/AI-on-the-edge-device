@@ -96,18 +96,24 @@ jobs:
           <!doctype html>
           <meta charset="utf-8">
           <title>AIOTED Manifest</title>
-            <h1>AIOTED Manifest</h1>
-            <p>Download: <a href="manifest.json">manifest.json</a></p>
-            <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
-            <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
-            HTML
+          <h1>AIOTED Manifest</h1>
+          <p>Download: <a href="manifest.json">manifest.json</a></p>
+          <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
+          <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
+          HTML
 
       - name: Sign manifest (Ed25519)
-        if: ${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 != '' }}
         shell: bash
+        env:
+          OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64: ${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 }}
         run: |
           set -euo pipefail
-          echo "${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 }}" | base64 -d > /tmp/ed25519_signing_key.pem
+          if [[ -z "${OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64:-}" ]]; then
+            echo "OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 not set; skipping manifest signing"
+            exit 0
+          fi
+
+          echo "${OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64}" | base64 -d > /tmp/ed25519_signing_key.pem
           chmod 600 /tmp/ed25519_signing_key.pem
 
           openssl pkeyutl -sign -inkey /tmp/ed25519_signing_key.pem -rawin -in pages/manifest.json -out pages/manifest.json.sig.bin
