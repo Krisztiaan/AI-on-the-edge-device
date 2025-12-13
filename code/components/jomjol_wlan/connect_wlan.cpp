@@ -49,7 +49,9 @@
 #define ets_delay_us(a) esp_rom_delay_us(a)
 #endif
 
-#include "../esp-protocols/components/mdns/include/mdns.h" 
+#if JOMJOL_ENABLE_MDNS
+    #include "../esp-protocols/components/mdns/include/mdns.h"
+#endif
 
 
 static const char *TAG = "WIFI";
@@ -660,14 +662,16 @@ esp_err_t wifi_init_sta(void)
         else {
 			LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Set hostname to: " + wlan_config.hostname);
         }
-		//initialize mDNS service
-        retval = mdns_init();
-        if (retval != ESP_OK) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mdns_init failed! Error: "  + std::to_string(retval));
-        } else {
-			//set mdns hostname
-			mdns_hostname_set(wlan_config.hostname.c_str());
-	    }
+        #if JOMJOL_ENABLE_MDNS
+            //initialize mDNS service
+            retval = mdns_init();
+            if (retval != ESP_OK) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mdns_init failed! Error: "  + std::to_string(retval));
+            } else {
+                //set mdns hostname
+                mdns_hostname_set(wlan_config.hostname.c_str());
+            }
+        #endif
     }
 
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Init successful");
@@ -717,4 +721,3 @@ void WIFIDestroy()
 	esp_wifi_stop();
 	esp_wifi_deinit();
 }
-
