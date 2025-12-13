@@ -4,6 +4,7 @@
 ##################################################################
 ##################################################################
 execute_process(COMMAND git log --pretty=format:'%h' -n 1
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 OUTPUT_VARIABLE GIT_REV
                 ERROR_QUIET)
 
@@ -20,12 +21,15 @@ if ("${GIT_REV}" STREQUAL "")
 else()
     execute_process(
         COMMAND bash -c "git diff --quiet --exit-code || echo +"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE GIT_DIFF)
     execute_process(
         COMMAND git describe --exact-match --tags
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE GIT_TAG ERROR_QUIET)
     execute_process(
         COMMAND git rev-parse --abbrev-ref HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         OUTPUT_VARIABLE GIT_BRANCH)
 
     string(STRIP "${GIT_REV}" GIT_REV)
@@ -54,16 +58,44 @@ endif()
 
 if (NOT "${VERSION}" STREQUAL "${VERSION_}")
     file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp "${VERSION}")
-    file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/../sd-card/html/version.txt "${VERSION_HTML}")
 endif()
 #######################################################################
 #######################################################################
 
-
-FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/main/*.*)
+FILE(GLOB_RECURSE app_sources
+    ${CMAKE_SOURCE_DIR}/main/*.c
+    ${CMAKE_SOURCE_DIR}/main/*.cpp
+    ${CMAKE_SOURCE_DIR}/main/*.cc
+)
 
 # idf_component_register(SRCS ${app_sources})
 
-idf_component_register(SRCS ${app_sources}
-                    INCLUDE_DIRS "."
-                    REQUIRES esp_psram)
+file(GLOB ui_embed_files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "ui/*")
+
+# PlatformIO's ESP-IDF integration may try to compile the generated
+# `<name>.S` sources before the IDF "embed files" custom commands run.
+# Pre-generate the `.S` files during CMake configure so they exist.
+set(embed_script "${IDF_PATH}/tools/cmake/scripts/data_file_embed_asm.cmake")
+foreach(ui_file IN LISTS ui_embed_files)
+    get_filename_component(ui_name "${ui_file}" NAME) # e.g. "common.js"
+    set(ui_in "${CMAKE_CURRENT_SOURCE_DIR}/${ui_file}")
+    set(ui_out "${CMAKE_BINARY_DIR}/${ui_name}.S")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}"
+                -D DATA_FILE=${ui_in}
+                -D SOURCE_FILE=${ui_out}
+                -D FILE_TYPE=BINARY
+                -P "${embed_script}"
+        RESULT_VARIABLE embed_res
+    )
+    if (NOT embed_res EQUAL 0)
+        message(FATAL_ERROR "Failed to generate embedded asset: ${ui_out} from ${ui_in}")
+    endif()
+endforeach()
+
+idf_component_register(
+    SRCS ${app_sources}
+    INCLUDE_DIRS "."
+    REQUIRES esp_psram
+    EMBED_FILES ${ui_embed_files}
+)
