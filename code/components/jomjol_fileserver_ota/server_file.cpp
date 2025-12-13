@@ -43,7 +43,9 @@ extern "C" {
 #include "server_GPIO.h"
 
 #include "Helper.h"
+#if CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
 #include "miniz.h"
+#endif
 #include "basic_auth.h"
 
 static const char *TAG = "OTA FILE";
@@ -66,6 +68,7 @@ string SUFFIX_ZW = "_tmp";
 static esp_err_t send_logfile(httpd_req_t *req, bool send_full_file);
 static esp_err_t send_datafile(httpd_req_t *req, bool send_full_file);
 
+#if CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
 static bool is_safe_zip_entry_name(const std::string &entry_name)
 {
     if (entry_name.empty()) {
@@ -99,6 +102,7 @@ static bool is_safe_zip_entry_name(const std::string &entry_name)
 
     return true;
 }
+#endif
 
 esp_err_t get_numbers_file_handler(httpd_req_t *req)
 {
@@ -980,6 +984,7 @@ void delete_all_in_directory(std::string _directory)
     closedir(dir);
 }
 
+#if CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
 std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::string _html_final, std::string _target_bin, std::string _main, bool _initial_setup)
 {
     int i, sort_iter;
@@ -1221,6 +1226,7 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
 
     ESP_LOGD(TAG, "Success.");
 }
+#endif // CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
 
 void register_server_file_uri(httpd_handle_t server, const char *base_path)
 {

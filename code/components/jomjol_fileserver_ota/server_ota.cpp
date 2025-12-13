@@ -671,6 +671,11 @@ void task_do_Update_ZIP(void *pvParameter)
 
     if (filetype == "ZIP")
     {
+#if !CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ZIP updates disabled in this build (CONFIG_JOMJOL_ENABLE_ZIP_UPDATES=n)");
+        vTaskDelete(NULL);
+        return;
+#else
         std::string in, outHtml, outHtmlTmp, outHtmlOld, outbin, zw, retfirmware;
 
         outHtml = "/sdcard/html";
@@ -703,6 +708,7 @@ void task_do_Update_ZIP(void *pvParameter)
 
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Trigger reboot due to firmware update");
         doRebootOTA();
+#endif
     } else if (filetype == "BIN")
     {
        	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Do firmware update - file: " + _file_name_update);
@@ -1315,6 +1321,12 @@ esp_err_t handler_ota_update(httpd_req_t *req)
 
     if (_task.compare("unziphtml") == 0)
     {
+#if !CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
+        std::string zw = "ZIP handling disabled in this build (CONFIG_JOMJOL_ENABLE_ZIP_UPDATES=n)";
+        httpd_resp_send(req, zw.c_str(), strlen(zw.c_str()));
+        httpd_resp_sendstr_chunk(req, NULL);
+        return ESP_OK;
+#else
         ESP_LOGD(TAG, "Task unziphtml");
         std::string in, out, zw;
 
@@ -1328,6 +1340,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         httpd_resp_send(req, zw.c_str(), strlen(zw.c_str()));
         httpd_resp_sendstr_chunk(req, NULL);  
         return ESP_OK;        
+#endif
     }
 
     if (_file_del)
