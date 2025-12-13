@@ -257,6 +257,7 @@ extern "C" void app_main(void)
     }
     (void)MakeDir("/spiffs/demo");             // optional demo mode
     (void)MakeDir("/spiffs/config/certs");     // mqtt / ota certs
+    (void)MakeDir("/spiffs/models");           // downloadable/stored CNN models
 
     // Check for updates
     // ********************************************
