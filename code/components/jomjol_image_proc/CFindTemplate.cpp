@@ -95,7 +95,8 @@ bool CFindTemplate::FindTemplate(RefInfo *_ref)
 
 
     double aktSAD;
-    double minSAD = pow(tpl_width * tpl_height * 255, 2);
+    const double max_sad = (double)tpl_width * (double)tpl_height * 255.0;
+    double minSAD = max_sad * max_sad;
 
     RGBImageLock();
 
@@ -116,7 +117,8 @@ bool CFindTemplate::FindTemplate(RefInfo *_ref)
                     stbi_uc* p_tpl = rgb_template + (channels * (tpl_y * tpl_width + tpl_x));
                     for (_ch = 0; _ch < _anzchannels; ++_ch)
                     {
-                        aktSAD += pow(p_tpl[_ch] - p_org[_ch], 2);
+                        const int diff = (int)p_tpl[_ch] - (int)p_org[_ch];
+                        aktSAD += (double)(diff * diff);
                     }
                 }
             if (aktSAD < minSAD)
@@ -179,7 +181,7 @@ bool CFindTemplate::CalculateSimularities(uint8_t* _rgb_tmpl, int _startx, int _
             for (_ch = 0; _ch < channels; ++_ch)
             {
                 dif = p_tpl[_ch] - p_org[_ch];
-                aktSAD += pow(p_tpl[_ch] - p_org[_ch], 2);                
+                aktSAD += (double)(dif * dif);
                 if (dif < minDif) minDif = dif;
                 if (dif > maxDif) maxDif = dif;
                 avgDifSum += dif;
@@ -201,6 +203,4 @@ bool CFindTemplate::CalculateSimularities(uint8_t* _rgb_tmpl, int _startx, int _
 
     return false;
 }
-
-
 
