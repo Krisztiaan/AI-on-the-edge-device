@@ -114,23 +114,9 @@ void SendHTTPResponse(httpd_req_t *req)
     if (!isConfigINI)
     {
         message = "<h3>1. Upload initial configuration to sd-card</h3><p>";
-        message += "The configuration file config.ini is missing and most propably the full configuration and html folder on the sd-card. ";
-        message += "This is normal after the first flashing of the firmware and an empty sd-card. Please upload \"remote_setup.zip\", which contains a full inital configuration.<p>";
-        message += "<input id=\"newfile\" type=\"file\"><br>";
-        message += "<button class=\"button\" style=\"width:300px\" id=\"doUpdate\" type=\"button\" onclick=\"upload()\">Upload File</button><p>";
-        message += "The upload might take up to 60s. After a succesfull upload the page will be updated.";
-        httpd_resp_send_chunk(req, message.c_str(), strlen(message.c_str()));
-
-        message = "<script language=\"JavaScript\">";
-        message += "function upload() {";
-        message += "var xhttp = new XMLHttpRequest();";
-        message += "xhttp.onreadystatechange = function() {if (xhttp.readyState == 4) {if (xhttp.status == 200) {location.reload();}}};";
-        message += "var filePath = document.getElementById(\"newfile\").value.split(/[\\\\/]/).pop();";
-        message += "var file = document.getElementById(\"newfile\").files[0];";
-        message += "if (!file.name.includes(\"remote-setup\")){if (!confirm(\"The zip file name should contain '...remote-setup...'. Are you sure that you have downloaded the correct file?\"))return;};";
-        message += "var upload_path = \"/upload/firmware/\" + filePath; xhttp.open(\"POST\", upload_path, true); xhttp.send(file);document.reload();";
-        message += "document.getElementById(\"doUpdate\").disabled = true;}";
-        message += "</script>";
+        message += "The configuration file config.ini is missing and most likely the full configuration and html folder are missing on the sd-card. ";
+        message += "ZIP bundles are no longer supported. Please upload the required files/folders via the file server (e.g. /config/config.ini, /config/wlan.ini, /html/*).<p>";
+        message += "<a href=\"/fileserver/\">Open file server</a><p>";
         httpd_resp_send_chunk(req, message.c_str(), strlen(message.c_str()));
         return;
     }
