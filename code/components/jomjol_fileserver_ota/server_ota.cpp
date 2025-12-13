@@ -462,27 +462,6 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
     return ESP_OK;
 }
 
-static bool parse_manifest_update_zip(const std::string &manifest_json, std::string &out_url, std::string &out_sha256)
-{
-    out_url.clear();
-    out_sha256.clear();
-
-    cJSON *root = cJSON_Parse(manifest_json.c_str());
-    if (!root) return false;
-
-    cJSON *update = cJSON_GetObjectItemCaseSensitive(root, "update");
-    cJSON *url = update ? cJSON_GetObjectItemCaseSensitive(update, "url") : NULL;
-    cJSON *sha = update ? cJSON_GetObjectItemCaseSensitive(update, "sha256") : NULL;
-
-    bool ok = cJSON_IsString(url) && (url->valuestring != NULL) && cJSON_IsString(sha) && (sha->valuestring != NULL);
-    if (ok) {
-        out_url = url->valuestring;
-        out_sha256 = sha->valuestring;
-    }
-    cJSON_Delete(root);
-    return ok;
-}
-
 static bool parse_manifest_firmware_bin(const std::string &manifest_json, std::string &out_url, std::string &out_sha256)
 {
     out_url.clear();
@@ -669,47 +648,7 @@ void task_do_Update_ZIP(void *pvParameter)
 
   	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "File: " + _file_name_update + " Filetype: " + filetype);
 
-    if (filetype == "ZIP")
-    {
-#if !CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ZIP updates disabled in this build (CONFIG_JOMJOL_ENABLE_ZIP_UPDATES=n)");
-        vTaskDelete(NULL);
-        return;
-#else
-        std::string in, outHtml, outHtmlTmp, outHtmlOld, outbin, zw, retfirmware;
-
-        outHtml = "/sdcard/html";
-        outHtmlTmp = "/sdcard/html_tmp";
-        outHtmlOld = "/sdcard/html_old";
-        outbin = "/sdcard/firmware";
-
-        /* Remove the old and tmp html folder in case they still exist */
-        removeFolder(outHtmlTmp.c_str(), TAG);
-        removeFolder(outHtmlOld.c_str(), TAG);
-
-        /* Extract the ZIP file. The content of the html folder gets extracted to the temporar folder html-temp. */
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Extracting ZIP file " + _file_name_update + "...");
-        retfirmware = unzip_new(_file_name_update, outHtmlTmp+"/", outHtml+"/", outbin+"/", "/sdcard/", initial_setup);
-    	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Files unzipped.");
-
-        /* ZIP file got extracted, replace the old html folder with the new one */
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Renaming folder " + outHtml + " to " + outHtmlOld + "...");
-        RenameFolder(outHtml, outHtmlOld);
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Renaming folder " + outHtmlTmp + " to " + outHtml + "...");
-        RenameFolder(outHtmlTmp, outHtml);
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Deleting folder " + outHtmlOld + "...");
-        removeFolder(outHtmlOld.c_str(), TAG);
-
-        if (retfirmware.length() > 0)
-        {
-            LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Found firmware.bin");
-            ota_update_task(retfirmware);
-        }
-
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Trigger reboot due to firmware update");
-        doRebootOTA();
-#endif
-    } else if (filetype == "BIN")
+    if (filetype == "BIN")
     {
        	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Do firmware update - file: " + _file_name_update);
         ota_update_task(_file_name_update);
@@ -718,7 +657,7 @@ void task_do_Update_ZIP(void *pvParameter)
     }
     else
     {
-    	LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Only ZIP-Files support for update during startup!");
+    	LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Only BIN files are supported for update during startup!");
     }
 }
 
@@ -1067,59 +1006,8 @@ esp_err_t handler_ota_update(httpd_req_t *req)
 
     if (_task.compare("download_update") == 0)
     {
-        const std::string manifest_url = UrlDecode(std::string(_manifest_url));
-        if (manifest_url.empty()) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing manifest URL (?manifest=...)");
-            return ESP_OK;
-        }
-
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading update manifest: " + manifest_url);
-        std::string manifest;
-        esp_err_t err = http_get_to_string(manifest_url, manifest, 32 * 1024);
-        if (err != ESP_OK) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to fetch manifest: " + std::to_string(err));
-            send_bad_gateway(req, "Failed to fetch manifest");
-            return ESP_OK;
-        }
-
-        std::string sig_err;
-        if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Manifest signature error: " + sig_err);
-            send_bad_gateway(req, sig_err.c_str());
-            return ESP_OK;
-        }
-
-        std::string update_url;
-        std::string update_sha256;
-        if (!parse_manifest_update_zip(manifest, update_url, update_sha256)) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid manifest (expected keys: update.url, update.sha256)");
-            return ESP_OK;
-        }
-
-        if (!is_valid_sha256_hex(update_sha256)) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid update sha256 in manifest");
-            return ESP_OK;
-        }
-
-        const std::string dest = "/sdcard/firmware/github_update.zip";
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading update: " + update_url);
-        err = http_download_to_file_with_sha256(update_url, dest, update_sha256, MAX_FILE_SIZE);
-        if (err != ESP_OK) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Update download failed: " + std::to_string(err));
-            send_bad_gateway(req, "Update download failed");
-            return ESP_OK;
-        }
-
-        FILE *pfile = fopen("/sdcard/update.txt", "w");
-        if (!pfile) {
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to schedule update");
-            return ESP_OK;
-        }
-        fwrite(dest.c_str(), dest.length(), 1, pfile);
-        fclose(pfile);
-
-        httpd_resp_sendstr_chunk(req, "reboot\n");
-        httpd_resp_sendstr_chunk(req, NULL);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "ZIP update bundles are no longer supported; use task=download_firmware instead");
         return ESP_OK;
     }
 
@@ -1249,7 +1137,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         std::string filetype = toUpper(getFileType(fn));
         if (filetype.length() == 0)
         {
-            std::string zw = "Update failed - no file specified (zip, bin, tfl, tlite)";
+            std::string zw = "Update failed - no file specified (bin, tfl, tlite)";
             httpd_resp_sendstr_chunk(req, zw.c_str());
             httpd_resp_sendstr_chunk(req, NULL);  
             return ESP_OK;        
@@ -1269,7 +1157,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         }
 
 
-        if ((filetype == "ZIP") || (filetype == "BIN"))
+        if (filetype == "BIN")
         {
            	FILE *pfile;
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Update for reboot");
@@ -1312,36 +1200,13 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         }
 */
 
-        std::string zw = "Update failed - no valid file specified (zip, bin, tfl, tlite)!";
+        std::string zw = "Update failed - no valid file specified (bin, tfl, tlite)!";
         httpd_resp_sendstr_chunk(req, zw.c_str());
         httpd_resp_sendstr_chunk(req, NULL);  
         return ESP_OK;        
     }
 
 
-    if (_task.compare("unziphtml") == 0)
-    {
-#if !CONFIG_JOMJOL_ENABLE_ZIP_UPDATES
-        std::string zw = "ZIP handling disabled in this build (CONFIG_JOMJOL_ENABLE_ZIP_UPDATES=n)";
-        httpd_resp_send(req, zw.c_str(), strlen(zw.c_str()));
-        httpd_resp_sendstr_chunk(req, NULL);
-        return ESP_OK;
-#else
-        ESP_LOGD(TAG, "Task unziphtml");
-        std::string in, out, zw;
-
-        in = "/sdcard/firmware/html.zip";
-        out = "/sdcard/html";
-
-        delete_all_in_directory(out);
-
-        unzip(in, out+"/");
-        zw = "Web Interface Update Successfull!\nNo reboot necessary";
-        httpd_resp_send(req, zw.c_str(), strlen(zw.c_str()));
-        httpd_resp_sendstr_chunk(req, NULL);  
-        return ESP_OK;        
-#endif
-    }
 
     if (_file_del)
     {
