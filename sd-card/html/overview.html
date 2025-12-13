@@ -130,10 +130,9 @@
 		</tr>
 	</table>
 
-	<script type="text/javascript" src="jquery-3.6.0.min.js?v=$COMMIT_HASH"></script>
-	<script type="text/javascript" src="common.js?v=$COMMIT_HASH"></script> 
-	<script type="text/javascript" src="readconfigcommon.js?v=$COMMIT_HASH"></script>
-	<script type="text/javascript" src="readconfigparam.js?v=$COMMIT_HASH"></script>
+		<script type="text/javascript" src="common.js?v=$COMMIT_HASH"></script> 
+		<script type="text/javascript" src="readconfigcommon.js?v=$COMMIT_HASH"></script>
+		<script type="text/javascript" src="readconfigparam.js?v=$COMMIT_HASH"></script>
 	
 	<script type="text/javascript">
 		function addZero(i) {
@@ -143,10 +142,10 @@
 			return i;
 		}
 
-		$(document).ready(function() {
-			LoadData();
-			LoadROIImage();
-		});
+			document.addEventListener("DOMContentLoaded", function() {
+				LoadData();
+				LoadROIImage();
+			});
 
 		function LoadData(){
 			loadValue("value", "value", "border-collapse: collapse; width: 100%");
