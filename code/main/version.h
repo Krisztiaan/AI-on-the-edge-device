@@ -52,11 +52,11 @@ std::string getFwVersion(void) {
 }
 
 std::string getHTMLversion(void){
-    return "remote";
+    return getFwVersion();
 }
 
 std::string getHTMLcommit(void){
-    return "remote";
+    return std::string(GIT_REV);
 }
 
 #endif // _VERSION_H

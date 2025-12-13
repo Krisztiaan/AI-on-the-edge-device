@@ -23,6 +23,7 @@
 #include <stdio.h>
 
 #include "Helper.h"
+#include "ui_embedded.h"
 
 httpd_handle_t server = NULL;   
 std::string starttime = "";
@@ -85,7 +86,7 @@ esp_err_t info_get_handler(httpd_req_t *req)
     }
     else if (_task.compare("HTMLVersion") == 0)
     {
-        httpd_resp_sendstr(req, "remote");
+        httpd_resp_sendstr(req, getHTMLversion().c_str());
         return ESP_OK;        
     }
     else if (_task.compare("Hostname") == 0)
@@ -220,31 +221,9 @@ esp_err_t hello_main_handler(httpd_req_t *req)
     LogFile.WriteHeapInfo("hello_main_handler - Start");
 #endif
 
-    char filepath[50];
     ESP_LOGD(TAG, "uri: %s\n", req->uri);
-    int _pos;
-    esp_err_t res;
-
-    char *base_path = (char*) req->user_ctx;
-    std::string filetosend(base_path);
-
-    const char *filename = get_path_from_uri(filepath, base_path,
-                                             req->uri - 1, sizeof(filepath));    
-    ESP_LOGD(TAG, "1 uri: %s, filename: %s, filepath: %s", req->uri, filename, filepath);
-
-    if ((strcmp(req->uri, "/") == 0))
-    {
-        {
-            filetosend = filetosend + "/html/index.html";
-        }
-    }
-    else
-    {
-        filetosend = filetosend + "/html" + std::string(req->uri);
-        _pos = filetosend.find("?");
-        if (_pos > -1){
-            filetosend = filetosend.substr(0, _pos);
-        }
+    if (strncmp(req->uri, "/ui", 3) == 0) {
+        return ui_embedded_handler(req);
     }
 
     if ((strcmp(req->uri, "/") == 0)) {
@@ -274,22 +253,14 @@ esp_err_t hello_main_handler(httpd_req_t *req)
         }
     }
 
-    // No local Web UI is stored on the device (no-SD design). Serve a small landing page
-    // and let users use the remote UI (or call the JSON APIs directly).
-    (void)filename;
-    (void)filepath;
-    (void)_pos;
-    (void)res;
-
-    std::string message = "<h1>AI on the Edge Device</h1>";
-    if (isSetupModusActive()) {
-        message += "<p><b>Setup mode</b> is active (missing config). Use the file server to upload configuration files.</p>";
+    if (strcmp(req->uri, "/") == 0) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/ui/index.html");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
     }
-    message += "<p>Web UI is hosted externally. Open: <a href=\"https://ai-meter.krsz.dev/\" target=_blank>ai-meter.krsz.dev</a></p>";
-    message += "<p>Local endpoints: <a href=\"/sysinfo\">/sysinfo</a>, <a href=\"/fileserver/\">/fileserver/</a>, <a href=\"/ota\">/ota</a></p>";
-    message += "<p>Tip: For offline setup, use the file server to upload `config/config.ini` and `wlan.ini`.</p>";
-    httpd_resp_send(req, message.c_str(), message.length());
-    return ESP_OK;
+
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
 
 #ifdef DEBUG_DETAIL_ON      
     LogFile.WriteHeapInfo("hello_main_handler - Stop");   
@@ -370,7 +341,7 @@ esp_err_t sysinfo_handler(httpd_req_t *req)
     std::string gitbranch = libfive_git_branch();
     std::string gittag = libfive_git_version();
     std::string gitrevision = libfive_git_revision();
-    std::string htmlversion = "remote";
+    std::string htmlversion = getHTMLversion();
     char freeheapmem[11];
     sprintf(freeheapmem, "%lu", (long) getESPHeapSize());
     
