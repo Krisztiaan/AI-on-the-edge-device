@@ -18,7 +18,15 @@ void doRebootOTA();
 void hard_restart();
 void CheckUpdate();
 
-// Downloads a model from `url` to `/spiffs/models/<name>` and optionally verifies SHA-256.
-// Endpoint is exposed via `/models/download?url=...&name=...&sha256=...&overwrite=1`.
+// Downloads a model from `url` to `/spiffs/models/<name>`, optionally verifies SHA-256,
+// and optionally marks it as the active model.
+esp_err_t DownloadModel(const std::string &url,
+                        const std::string &name,
+                        const std::string &expected_sha256,
+                        bool overwrite,
+                        bool set_active,
+                        std::string &out_sha256,
+                        size_t &out_bytes,
+                        std::string &out_error);
 
 #endif //SERVEROTA_H

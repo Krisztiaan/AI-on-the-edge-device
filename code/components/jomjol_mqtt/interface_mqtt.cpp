@@ -11,6 +11,7 @@
 #include "MainFlowControl.h"
 #include "cJSON.h"
 #include "../../include/defines.h"
+#include "server_ota.h"
 #include "sdkconfig.h"
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
     #include "esp_crt_bundle.h"
@@ -455,6 +456,59 @@ bool mqtt_handler_set_prevalue(std::string _topic, char* _data, int _data_len)
     return ESP_FAIL;
 }
 
+bool mqtt_handler_model_update(std::string _topic, char* _data, int _data_len)
+{
+    (void)_topic;
+
+    if (!_data || _data_len <= 0) {
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "handler_model_update: called, but no data received");
+        return ESP_FAIL;
+    }
+
+    cJSON *jsonData = cJSON_ParseWithLength(_data, _data_len);
+    if (!jsonData) {
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "handler_model_update: invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *url = cJSON_GetObjectItemCaseSensitive(jsonData, "url");
+    cJSON *name = cJSON_GetObjectItemCaseSensitive(jsonData, "name");
+    cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(jsonData, "sha256");
+    cJSON *overwrite = cJSON_GetObjectItemCaseSensitive(jsonData, "overwrite");
+    cJSON *set_active = cJSON_GetObjectItemCaseSensitive(jsonData, "set_active");
+
+    if (!cJSON_IsString(url) || !url->valuestring) {
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "handler_model_update: missing required 'url' string");
+        cJSON_Delete(jsonData);
+        return ESP_FAIL;
+    }
+
+    const std::string name_s = (cJSON_IsString(name) && name->valuestring) ? std::string(name->valuestring) : std::string();
+    const std::string sha_s = (cJSON_IsString(sha256) && sha256->valuestring) ? std::string(sha256->valuestring) : std::string();
+    const bool overwrite_b = cJSON_IsBool(overwrite) ? cJSON_IsTrue(overwrite) : false;
+    const bool set_active_b = cJSON_IsBool(set_active) ? cJSON_IsTrue(set_active) : true;
+
+    std::string got_sha, err;
+    size_t bytes = 0;
+    esp_err_t res = DownloadModel(url->valuestring, name_s, sha_s, overwrite_b, set_active_b, got_sha, bytes, err);
+    cJSON_Delete(jsonData);
+
+    std::string statusTopic = maintopic + "/status/model";
+    if (res == ESP_OK) {
+        const std::string effective_name = name_s.empty() ? "model.tflite.gz" : name_s;
+        const std::string payload = "{\"status\":\"ok\",\"name\":\"" + effective_name +
+                                    "\",\"bytes\":" + std::to_string(bytes) +
+                                    ",\"sha256\":\"" + got_sha + "\"" +
+                                    (set_active_b ? ",\"active\":true" : "") + "}";
+        MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+        return ESP_OK;
+    }
+
+    const std::string payload = "{\"status\":\"error\",\"error\":\"" + (err.empty() ? std::string(esp_err_to_name(res)) : err) + "\"}";
+    MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+    return ESP_FAIL;
+}
+
 void MQTTconnected(){
     if (mqtt_connected) {
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Connected to broker");
@@ -474,6 +528,9 @@ void MQTTconnected(){
 
         std::function<bool(std::string topic, char* data, int data_len)> subHandler2 = mqtt_handler_set_prevalue;     
         MQTTregisterSubscribeFunction(maintopic + "/ctrl/set_prevalue", subHandler2);      // subcribe to maintopic/ctrl/set_prevalue
+
+        std::function<bool(std::string topic, char* data, int data_len)> subHandler3 = mqtt_handler_model_update;
+        MQTTregisterSubscribeFunction(maintopic + "/ctrl/model", subHandler3);            // subscribe to maintopic/ctrl/model
 
        if (subscribeFunktionMap != NULL) {
             for(std::map<std::string, std::function<bool(std::string, char*, int)>>::iterator it = subscribeFunktionMap->begin(); it != subscribeFunktionMap->end(); ++it) {

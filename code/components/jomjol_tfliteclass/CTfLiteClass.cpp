@@ -6,11 +6,87 @@
 #include "../../include/defines.h"
 
 #include <sys/stat.h>
+#include <miniz.h>
+#include <stdint.h>
+#include <string.h>
 
 // #define DEBUG_DETAIL_ON
 
 
 static const char *TAG = "TFLITE";
+
+static bool ends_with(const std::string &s, const char *suffix)
+{
+    const size_t slen = s.size();
+    const size_t tlen = strlen(suffix);
+    return slen >= tlen && s.compare(slen - tlen, tlen, suffix) == 0;
+}
+
+static bool read_le_u16(FILE *f, uint16_t &out)
+{
+    uint8_t b[2];
+    if (fread(b, 1, sizeof(b), f) != sizeof(b)) return false;
+    out = (uint16_t)(b[0] | (uint16_t)b[1] << 8);
+    return true;
+}
+
+static bool read_le_u32(FILE *f, uint32_t &out)
+{
+    uint8_t b[4];
+    if (fread(b, 1, sizeof(b), f) != sizeof(b)) return false;
+    out = (uint32_t)(b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24);
+    return true;
+}
+
+static bool gzip_skip_header(FILE *f, long file_size, long &out_deflate_offset)
+{
+    if (file_size < 18) { // gzip header (10) + footer (8)
+        return false;
+    }
+
+    uint8_t hdr[10];
+    if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)) return false;
+    if (hdr[0] != 0x1f || hdr[1] != 0x8b) return false;
+    if (hdr[2] != 8) return false; // deflate
+    const uint8_t flg = hdr[3];
+
+    // Skip optional fields
+    if (flg & 0x04) { // FEXTRA
+        uint16_t xlen = 0;
+        if (!read_le_u16(f, xlen)) return false;
+        if (fseek(f, (long)xlen, SEEK_CUR) != 0) return false;
+    }
+    if (flg & 0x08) { // FNAME
+        int c;
+        do {
+            c = fgetc(f);
+            if (c == EOF) return false;
+        } while (c != 0);
+    }
+    if (flg & 0x10) { // FCOMMENT
+        int c;
+        do {
+            c = fgetc(f);
+            if (c == EOF) return false;
+        } while (c != 0);
+    }
+    if (flg & 0x02) { // FHCRC
+        if (fseek(f, 2, SEEK_CUR) != 0) return false;
+    }
+
+    long pos = ftell(f);
+    if (pos < 0) return false;
+    if (pos >= file_size - 8) return false; // must leave footer
+    out_deflate_offset = pos;
+    return true;
+}
+
+static bool gzip_get_isize(FILE *f, long file_size, uint32_t &out_isize)
+{
+    if (file_size < 18) return false;
+    if (fseek(f, file_size - 4, SEEK_SET) != 0) return false;
+    return read_le_u32(f, out_isize);
+}
 
 
 void CTfLiteClass::MakeStaticResolver()
@@ -264,20 +340,39 @@ long CTfLiteClass::GetFileSize(std::string filename)
 bool CTfLiteClass::ReadFileToModel(std::string _fn)
 {
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "CTfLiteClass::ReadFileToModel: " + _fn);
-    
-    long size = GetFileSize(_fn);
 
-    if (size == -1)
+    const bool is_gz = ends_with(_fn, ".gz");
+    long file_size = GetFileSize(_fn);
+    if (file_size == -1)
     {
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model file doesn't exist: " + _fn + "!");
         return false;
     }
-    else if(size > MAX_MODEL_SIZE) {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to load model '" + _fn + "'! It does not fit in the reserved shared memory in PSRAM!");
+
+    uint32_t expected_size_u32 = 0;
+    long expected_size = file_size;
+    if (is_gz) {
+        FILE *pf = fopen(_fn.c_str(), "rb");
+        if (!pf) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to open model: " + _fn);
+            return false;
+        }
+        if (!gzip_get_isize(pf, file_size, expected_size_u32)) {
+            fclose(pf);
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to read gzip footer (ISIZE) for model: " + _fn);
+            return false;
+        }
+        fclose(pf);
+        expected_size = (long)expected_size_u32;
+    }
+
+    if (expected_size <= 0 || expected_size > (long)MAX_MODEL_SIZE) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to load model '" + _fn + "'! Decompressed size does not fit in reserved PSRAM (size=" +
+                                               std::to_string(expected_size) + ", max=" + std::to_string((long)MAX_MODEL_SIZE) + ")");
         return false;
     }
 
-    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Loading Model " + _fn + " /size: " + std::to_string(size) + " bytes...");
+    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Loading Model " + _fn + " /size: " + std::to_string(expected_size) + " bytes...");
 
 #ifdef DEBUG_DETAIL_ON      
         LogFile.WriteHeapInfo("CTLiteClass::Alloc modelfile start");
@@ -291,8 +386,102 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
     
         if (pFile != NULL)
         {
-          fread(modelfile, 1, size, pFile);
-          fclose(pFile);
+          if (!is_gz) {
+              fread(modelfile, 1, expected_size, pFile);
+              fclose(pFile);
+          } else {
+              const long full_size = file_size;
+              long deflate_offset = 0;
+              if (!gzip_skip_header(pFile, full_size, deflate_offset)) {
+                  fclose(pFile);
+                  LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Gzip header parse failed for model: " + _fn);
+                  return false;
+              }
+
+              const long deflate_end = full_size - 8; // exclude gzip footer
+              if (deflate_end <= deflate_offset) {
+                  fclose(pFile);
+                  LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Gzip data section invalid for model: " + _fn);
+                  return false;
+              }
+
+              if (fseek(pFile, deflate_offset, SEEK_SET) != 0) {
+                  fclose(pFile);
+                  LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to seek gzip deflate stream for model: " + _fn);
+                  return false;
+              }
+
+              tinfl_decompressor decomp;
+              tinfl_init(&decomp);
+
+              uint8_t inbuf[1024];
+              size_t in_avail = 0;
+              size_t out_pos = 0;
+              long in_off = deflate_offset;
+
+              while (true) {
+                  if (in_avail == 0) {
+                      const long remaining = deflate_end - in_off;
+                      if (remaining <= 0) {
+                          fclose(pFile);
+                          LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Gzip stream ended unexpectedly for model: " + _fn);
+                          return false;
+                      }
+                      const size_t to_read = (size_t)std::min<long>(remaining, (long)sizeof(inbuf));
+                      const size_t r = fread(inbuf, 1, to_read, pFile);
+                      if (r == 0) {
+                          fclose(pFile);
+                          LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to read gzip stream for model: " + _fn);
+                          return false;
+                      }
+                      in_avail = r;
+                      in_off += (long)r;
+                  }
+
+                  const uint8_t *in_ptr = inbuf;
+                  size_t in_bytes = in_avail;
+                  size_t out_bytes = (size_t)expected_size - out_pos;
+
+                  mz_uint32 flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+                  if (in_off < deflate_end) {
+                      flags |= TINFL_FLAG_HAS_MORE_INPUT;
+                  }
+
+                  tinfl_status st = tinfl_decompress(&decomp,
+                                                     in_ptr, &in_bytes,
+                                                     (mz_uint8 *)modelfile,
+                                                     (mz_uint8 *)modelfile + out_pos, &out_bytes,
+                                                     flags);
+
+                  // in_bytes/out_bytes are the amount consumed/produced
+                  in_avail -= in_bytes;
+                  if (in_avail > 0) {
+                      memmove(inbuf, inbuf + in_bytes, in_avail);
+                  }
+                  out_pos += out_bytes;
+
+                  if (st == TINFL_STATUS_DONE) {
+                      break;
+                  }
+                  if (st < TINFL_STATUS_DONE) {
+                      fclose(pFile);
+                      LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Gzip inflate failed for model: " + _fn + " (status=" + std::to_string((int)st) + ")");
+                      return false;
+                  }
+                  if (st == TINFL_STATUS_HAS_MORE_OUTPUT) {
+                      fclose(pFile);
+                      LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Gzip model too large for buffer: " + _fn);
+                      return false;
+                  }
+              }
+
+              fclose(pFile);
+
+              if ((long)out_pos != expected_size) {
+                  LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Gzip model decompressed size mismatch: expected " +
+                                                     std::to_string(expected_size) + " got " + std::to_string(out_pos));
+              }
+          }
 
 #ifdef DEBUG_DETAIL_ON
           LogFile.WriteHeapInfo("CTLiteClass::Alloc modelfile successful");
@@ -308,7 +497,7 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
     }   
     else 
     {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CTfLiteClass::ReadFileToModel: Can't allocate enough memory: " + std::to_string(size));
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CTfLiteClass::ReadFileToModel: Can't allocate enough memory: " + std::to_string(expected_size));
         LogFile.WriteHeapInfo("CTfLiteClass::ReadFileToModel");
 
         return false;
