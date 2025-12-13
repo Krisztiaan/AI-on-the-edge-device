@@ -10,7 +10,7 @@
 #include <string>
 
 
-void register_server_ota_sdcard_uri(httpd_handle_t server);
+void register_server_ota_uri(httpd_handle_t server);
 void CheckOTAUpdate();
 void StartOTAVerifyMonitor();
 void doReboot();

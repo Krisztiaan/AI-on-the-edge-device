@@ -645,14 +645,14 @@ bool ClassFlowControll::ReadParameter(FILE* pfile, string& aktparamgraph)
 }
 
 int ClassFlowControll::CleanTempFolder() {
-    const char* folderPath = "/sdcard/img_tmp";
+    const char* folderPath = "/spiffs/img_tmp";
 
 #if !JOMJOL_ENABLE_IMAGE_PERSISTENCE
     (void)folderPath;
     return 0;
 #endif
     
-    ESP_LOGD(TAG, "Clean up temporary folder to avoid damage of sdcard sectors: %s", folderPath);
+    ESP_LOGD(TAG, "Clean up temporary folder to reduce flash wear: %s", folderPath);
     DIR *dir = opendir(folderPath);
 	
     if (!dir) {
@@ -712,123 +712,18 @@ esp_err_t ClassFlowControll::GetJPGStream(std::string _fn, httpd_req_t *req)
     }
     else if (_fn == "alg_roi.jpg") {
         #ifdef ALGROI_LOAD_FROM_MEM_AS_JPG      // no CImageBasis needed to create alg_roi.jpg (ca. 790kB less RAM)
-            if (aktstatus.find("Initialization (delayed)") != -1) {
-                std::string filename = "/sdcard/html/Flowstate_initialization_delayed.jpg";
-                result = send_file(req, filename);
-                /*    
-                FILE* file = fopen("/sdcard/html/Flowstate_initialization_delayed.jpg", "rb"); 
-
-                if (!file) {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "File /sdcard/html/Flowstate_initialization_delayed.jpg not found");
-                    return ESP_FAIL;
-                }
-
-                fseek(file, 0, SEEK_END);
-                long fileSize = ftell(file); // how long is the file ?
-                fseek(file, 0, SEEK_SET); // reset
-
-                unsigned char* fileBuffer = (unsigned char*) malloc(fileSize);
-
-                if (!fileBuffer) {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ClassFlowControll::GetJPGStream: Not enough memory to create fileBuffer: " + std::to_string(fileSize));
-                    fclose(file);  
-                    return ESP_FAIL;
-                }
-
-                fread(fileBuffer, fileSize, 1, file);
-                fclose(file);
-
+            if (flowalignment && flowalignment->AlgROI) {
                 httpd_resp_set_type(req, "image/jpeg");
-                result = httpd_resp_send(req, (const char *)fileBuffer, fileSize); 
-                free(fileBuffer);
-                */
-            }
-            else if (aktstatus.find("Initialization") != -1) {
-                std::string filename = "/sdcard/html/Flowstate_initialization.jpg";
-                result = send_file(req, filename);
-                /*
-                FILE* file = fopen("/sdcard/html/Flowstate_initialization.jpg", "rb"); 
-
-                if (!file) {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "File /sdcard/html/Flowstate_initialization.jpg not found");
-                    return ESP_FAIL;
-                }
-
-                fseek(file, 0, SEEK_END);
-                long fileSize = ftell(file); // how long is the file ?
-                fseek(file, 0, SEEK_SET); // reset
-
-                unsigned char* fileBuffer = (unsigned char*) malloc(fileSize);
-
-                if (!fileBuffer) {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ClassFlowControll::GetJPGStream: Not enough memory to create fileBuffer: " + std::to_string(fileSize));
-                    fclose(file);  
-                    return ESP_FAIL;
-                }
-
-                fread(fileBuffer, fileSize, 1, file);
-                fclose(file);
-
-                httpd_resp_set_type(req, "image/jpeg");
-                result = httpd_resp_send(req, (const char *)fileBuffer, fileSize); 
-                free(fileBuffer);
-                */
-            }
-            else if (aktstatus.find("Take Image") != -1) {
-                if (flowalignment && flowalignment->AlgROI) {
-                    std::string filename = "/sdcard/html/Flowstate_take_image.jpg";
-                    result = send_file(req, filename);
-                    /*
-                    FILE* file = fopen("/sdcard/html/Flowstate_take_image.jpg", "rb");    
-
-                    if (!file) {
-                        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "File /sdcard/html/Flowstate_take_image.jpg not found");
-                        return ESP_FAIL;
-                    }
-
-                    fseek(file, 0, SEEK_END);
-                    flowalignment->AlgROI->size = ftell(file); // how long is the file ?
-                    fseek(file, 0, SEEK_SET); // reset
-                    
-                    if (flowalignment->AlgROI->size > MAX_JPG_SIZE) {
-                        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "File /sdcard/html/Flowstate_take_image.jpg (" + std::to_string(flowalignment->AlgROI->size) +
-                                                                ") > allocated buffer (" + std::to_string(MAX_JPG_SIZE) + ")");
-                        fclose(file);
-                        return ESP_FAIL;
-                    }
-
-                    fread(flowalignment->AlgROI->data, flowalignment->AlgROI->size, 1, file);
-                    fclose(file);
-
-                    httpd_resp_set_type(req, "image/jpeg");
-                    result = httpd_resp_send(req, (const char *)flowalignment->AlgROI->data, flowalignment->AlgROI->size);
-                    */
-                }
-                else {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ClassFlowControll::GetJPGStream: alg_roi.jpg cannot be served -> alg.jpg is going to be served!");
-                    if (flowalignment && flowalignment->ImageBasis->ImageOkay()) {
-                        _send = flowalignment->ImageBasis;
-                    }
-                    else {
-                        httpd_resp_send(req, NULL, 0);
-                        return ESP_OK;
-                    }
-                }
+                result = httpd_resp_send(req, (const char *)flowalignment->AlgROI->data, flowalignment->AlgROI->size);
             }
             else {
-                if (flowalignment && flowalignment->AlgROI) {
-                    httpd_resp_set_type(req, "image/jpeg");
-                    result = httpd_resp_send(req, (const char *)flowalignment->AlgROI->data, flowalignment->AlgROI->size);
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ClassFlowControll::GetJPGStream: alg_roi.jpg cannot be served -> alg.jpg is going to be served!");
+                if (flowalignment && flowalignment->ImageBasis->ImageOkay()) {
+                    _send = flowalignment->ImageBasis;
                 }
                 else {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ClassFlowControll::GetJPGStream: alg_roi.jpg cannot be served -> alg.jpg is going to be served!");
-                    if (flowalignment && flowalignment->ImageBasis->ImageOkay()) {
-                        _send = flowalignment->ImageBasis;
-                    }
-                    else {
-                        httpd_resp_send(req, NULL, 0);
-                        return ESP_OK;
-                    }
+                    httpd_resp_send(req, NULL, 0);
+                    return ESP_OK;
                 }
             }
         #else

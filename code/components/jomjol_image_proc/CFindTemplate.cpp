@@ -71,7 +71,7 @@ bool CFindTemplate::FindTemplate(RefInfo *_ref)
 /*#ifdef DEBUG_DETAIL_ON
         std::string zw = "\t" + _ref->image_file + "\tt1_x_y:\t" + std::to_string(_ref->fastalg_x) + "\t" + std::to_string(_ref->fastalg_y);
         zw = zw + "\tpara1_found_min_avg_max_SAD:\t" + std::to_string(min) + "\t" + std::to_string(avg) + "\t" + std::to_string(max) + "\t"+ std::to_string(SAD);
-        LogFile.WriteToDedicatedFile("/sdcard/alignment.txt", zw);
+        LogFile.WriteToDedicatedFile("/spiffs/alignment.txt", zw);
 #endif*/
     }
 
@@ -149,7 +149,7 @@ bool CFindTemplate::FindTemplate(RefInfo *_ref)
 /*#ifdef DEBUG_DETAIL_ON
     std::string zw = "\t" + _ref->image_file + "\tt1_x_y:\t" + std::to_string(_ref->fastalg_x) + "\t" + std::to_string(_ref->fastalg_y);
     zw = zw + "\tpara1_found_min_avg_max_SAD:\t" + std::to_string(min) + "\t" + std::to_string(avg) + "\t" + std::to_string(max) + "\t"+ std::to_string(SAD);
-    LogFile.WriteToDedicatedFile("/sdcard/alignment.txt", zw);
+    LogFile.WriteToDedicatedFile("/spiffs/alignment.txt", zw);
 #endif*/
 
     RGBImageRelease();
@@ -203,4 +203,3 @@ bool CFindTemplate::CalculateSimularities(uint8_t* _rgb_tmpl, int _startx, int _
 
     return false;
 }
-

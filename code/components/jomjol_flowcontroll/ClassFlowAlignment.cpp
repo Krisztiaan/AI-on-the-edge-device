@@ -21,8 +21,8 @@ void ClassFlowAlignment::SetInitialParameter(void)
     use_antialiasing = false;
     initialflip = false;
     SaveAllFiles = false;
-    namerawimage = "/sdcard/img_tmp/raw.jpg";
-    FileStoreRefAlignment = "/sdcard/config/align.txt";
+    namerawimage = "/spiffs/img_tmp/raw.jpg";
+    FileStoreRefAlignment = "/spiffs/config/align.txt";
     ListFlowControll = NULL;
     AlignAndCutImage = NULL;
     ImageBasis = NULL;
@@ -103,14 +103,14 @@ bool ClassFlowAlignment::ReadParameter(FILE *pfile, string &aktparamgraph)
         else if ((splitted.size() == 3) && (anz_ref < 2)) {
             if ((isStringNumeric(splitted[1])) && (isStringNumeric(splitted[2])))
             {
-                References[anz_ref].image_file = FormatFileName("/sdcard" + splitted[0]);
+                References[anz_ref].image_file = FormatFileName("/spiffs" + splitted[0]);
                 References[anz_ref].target_x = std::stod(splitted[1]);
                 References[anz_ref].target_y = std::stod(splitted[2]);
                 anz_ref++;
             }
             else
             {
-                References[anz_ref].image_file = FormatFileName("/sdcard" + splitted[0]);
+                References[anz_ref].image_file = FormatFileName("/spiffs" + splitted[0]);
                 References[anz_ref].target_x = 10;
                 References[anz_ref].target_y = 10;
                 anz_ref++;
@@ -230,7 +230,7 @@ bool ClassFlowAlignment::doFlow(string time)
         }
 
         if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
-            AlignAndCutImage->SaveToFile(FormatFileName("/sdcard/img_tmp/rot.jpg"));
+            AlignAndCutImage->SaveToFile(FormatFileName("/spiffs/img_tmp/rot.jpg"));
         }
     }
 
@@ -255,8 +255,8 @@ bool ClassFlowAlignment::doFlow(string time)
 #endif
 
     if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
-        AlignAndCutImage->SaveToFile(FormatFileName("/sdcard/img_tmp/alg.jpg"));
-        ImageTMP->SaveToFile(FormatFileName("/sdcard/img_tmp/alg_roi.jpg"));
+        AlignAndCutImage->SaveToFile(FormatFileName("/spiffs/img_tmp/alg.jpg"));
+        ImageTMP->SaveToFile(FormatFileName("/spiffs/img_tmp/alg_roi.jpg"));
     }
 
     // must be deleted to have memory space for loading tflite
@@ -360,11 +360,11 @@ bool ClassFlowAlignment::LoadReferenceAlignmentValues(void)
         std::string _zw = "\tLoadReferences[0]\tx,y:\t" + std::to_string(References[0].fastalg_x) + "\t" + std::to_string(References[0].fastalg_x);
         _zw = _zw + "\tSAD, min, max, avg:\t" + std::to_string(References[0].fastalg_SAD) + "\t" + std::to_string(References[0].fastalg_min);
         _zw = _zw + "\t" + std::to_string(References[0].fastalg_max) + "\t" + std::to_string(References[0].fastalg_avg);
-        LogFile.WriteToDedicatedFile("/sdcard/alignment.txt", _zw);
+        LogFile.WriteToDedicatedFile("/spiffs/alignment.txt", _zw);
         _zw = "\tLoadReferences[1]\tx,y:\t" + std::to_string(References[1].fastalg_x) + "\t" + std::to_string(References[1].fastalg_x);
         _zw = _zw + "\tSAD, min, max, avg:\t" + std::to_string(References[1].fastalg_SAD) + "\t" + std::to_string(References[1].fastalg_min);
         _zw = _zw + "\t" + std::to_string(References[1].fastalg_max) + "\t" + std::to_string(References[1].fastalg_avg);
-        LogFile.WriteToDedicatedFile("/sdcard/alignment.txt", _zw);
+        LogFile.WriteToDedicatedFile("/spiffs/alignment.txt", _zw);
     #endif*/
 
     return true;

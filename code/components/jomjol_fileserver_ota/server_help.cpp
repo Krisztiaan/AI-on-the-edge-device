@@ -74,11 +74,7 @@ esp_err_t send_file(httpd_req_t *req, std::string filename)
         endsWith(filename, ".gif") ||
         // endsWith(filename, ".zip") ||
         endsWith(filename, ".gz"))	{
-        if (filename == "/sdcard/html/setup.html") {
-            httpd_resp_set_hdr(req, "Clear-Site-Data", "\"*\"");
-            set_content_type_from_file(req, filename.c_str());
-        }
-        else if (_gz_file_exists) {
+        if (_gz_file_exists) {
             httpd_resp_set_hdr(req, "Cache-Control", "max-age=43200");
             httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
             set_content_type_from_file(req, _filename_old.c_str());

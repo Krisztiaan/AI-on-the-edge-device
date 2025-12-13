@@ -64,7 +64,7 @@ void ClassFlowTakeImage::SetInitialParameter(void)
     TimeImageTaken = 0;
     rawImage = NULL;
     disabled = false;
-    namerawimage = "/sdcard/img_tmp/raw.jpg";
+    namerawimage = "/spiffs/img_tmp/raw.jpg";
 }
 
 // auslesen der Kameraeinstellungen aus der config.ini
@@ -97,7 +97,7 @@ bool ClassFlowTakeImage::ReadParameter(FILE *pfile, string &aktparamgraph)
 
         if ((toUpper(splitted[0]) == "RAWIMAGESLOCATION") && (splitted.size() > 1))
         {
-            imagesLocation = "/sdcard" + splitted[1];
+            imagesLocation = "/spiffs" + splitted[1];
             isLogImage = true;
         }
 

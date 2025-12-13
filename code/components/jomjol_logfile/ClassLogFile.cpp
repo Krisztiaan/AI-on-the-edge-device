@@ -20,7 +20,7 @@ extern "C" {
 
 static const char *TAG = "LOGFILE";
 
-ClassLogFile LogFile("/sdcard/log/message", "log_%Y-%m-%d.txt", "/sdcard/log/data", "data_%Y-%m-%d.csv");
+ClassLogFile LogFile("/spiffs/log/message", "log_%Y-%m-%d.txt", "/spiffs/log/data", "data_%Y-%m-%d.csv");
 
 
 void ClassLogFile::WriteHeapInfo(std::string _id)
@@ -401,12 +401,12 @@ void ClassLogFile::RemoveOldDataLog()
 bool ClassLogFile::CreateLogDirectories()
 {
     bool bRetval = false;
-    bRetval = MakeDir("/sdcard/log");
-    bRetval = MakeDir("/sdcard/log/data");
-    bRetval = MakeDir("/sdcard/log/analog");
-    bRetval = MakeDir("/sdcard/log/digit");
-    bRetval = MakeDir("/sdcard/log/message");
-    bRetval = MakeDir("/sdcard/log/source");
+    bRetval = MakeDir("/spiffs/log");
+    bRetval = MakeDir("/spiffs/log/data");
+    bRetval = MakeDir("/spiffs/log/analog");
+    bRetval = MakeDir("/spiffs/log/digit");
+    bRetval = MakeDir("/spiffs/log/message");
+    bRetval = MakeDir("/spiffs/log/source");
 
     return bRetval;
 }

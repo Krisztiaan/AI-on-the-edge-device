@@ -8,4 +8,4 @@ set(app_sources
 
 idf_component_register(SRCS ${app_sources}
                     INCLUDE_DIRS "." "../../include"
-                    REQUIRES vfs esp_http_server app_update esp_http_client nvs_flash jomjol_tfliteclass jomjol_flowcontroll spiffs jomjol_helper jomjol_controlGPIO json)
+                    REQUIRES vfs esp_http_server app_update esp_http_client nvs_flash jomjol_tfliteclass jomjol_flowcontroll jomjol_helper jomjol_controlGPIO json)

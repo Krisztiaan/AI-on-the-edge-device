@@ -55,7 +55,7 @@ void CheckIsPlannedReboot(void)
 {
     FILE *pfile;
 
-    if ((pfile = fopen("/sdcard/reboot.txt", "r")) == NULL)
+    if ((pfile = fopen("/spiffs/reboot.txt", "r")) == NULL)
     {
         // LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Initial boot or not a planned reboot");
         isPlannedReboot = false;
@@ -63,7 +63,7 @@ void CheckIsPlannedReboot(void)
     else
     {
         LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Planned reboot");
-        DeleteFile("/sdcard/reboot.txt"); // Prevent Boot Loop!!!
+        DeleteFile("/spiffs/reboot.txt"); // Prevent Boot Loop!!!
         isPlannedReboot = true;
     }
 }
@@ -868,8 +868,8 @@ esp_err_t handler_editflow(httpd_req_t *req)
         ESP_LOGD(TAG, "out: %s", out.c_str());
 #endif
 
-        in = "/sdcard" + in;
-        out = "/sdcard" + out;
+        in = "/spiffs" + in;
+        out = "/spiffs" + out;
 
         CopyFile(in, out);
         zw = "Copy Done";
@@ -936,8 +936,8 @@ esp_err_t handler_editflow(httpd_req_t *req)
             }
         }
 
-        in = "/sdcard" + in;
-        out = "/sdcard" + out;
+        in = "/spiffs" + in;
+        out = "/spiffs" + out;
 
         std::string out2 = out.substr(0, out.length() - 4) + "_org.jpg";
 

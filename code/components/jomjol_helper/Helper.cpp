@@ -22,23 +22,17 @@ extern "C"
 #include <string.h>
 #include <esp_log.h>
 #include <esp_mac.h>
+#include "esp_vfs_fat.h"
 #include <esp_timer.h>
 #include "../../include/defines.h"
 
 #include "ClassLogFile.h"
-
-#include "esp_vfs_fat.h"
-#include "../sdmmc_common.h"
 
 static const char *TAG = "HELPER";
 
 using namespace std;
 
 unsigned int systemStatus = 0;
-
-sdmmc_cid_t SDCardCid;
-sdmmc_csd_t SDCardCsd;
-bool SDCardIsMMC;
 
 // #define DEBUG_DETAIL_ON
 
@@ -91,83 +85,47 @@ size_t getInternalESPHeapSize()
 
 string getSDCardPartitionSize()
 {
-	FATFS *fs;
-	uint32_t fre_clust, tot_sect;
-
-	/* Get volume information and free clusters of drive 0 */
-	f_getfree("0:", (DWORD *)&fre_clust, &fs);
-	tot_sect = ((fs->n_fatent - 2) * fs->csize) / 1024 / (1024 / SDCardCsd.sector_size); // corrected by SD Card sector size (usually 512 bytes) and convert to MB
-
-	// ESP_LOGD(TAG, "%d MB total drive space (Sector size [bytes]: %d)", (int)tot_sect, (int)fs->ssize);
-
-	return std::to_string(tot_sect);
+	uint64_t total = 0;
+	uint64_t free = 0;
+	if (esp_vfs_fat_info("/spiffs", &total, &free) != ESP_OK) {
+		return "0";
+	}
+	return std::to_string((unsigned)(total / (1024 * 1024)));
 }
 
 string getSDCardFreePartitionSpace()
 {
-	FATFS *fs;
-	uint32_t fre_clust, fre_sect;
-
-	/* Get volume information and free clusters of drive 0 */
-	f_getfree("0:", (DWORD *)&fre_clust, &fs);
-	fre_sect = (fre_clust * fs->csize) / 1024 / (1024 / SDCardCsd.sector_size); // corrected by SD Card sector size (usually 512 bytes) and convert to MB
-
-	// ESP_LOGD(TAG, "%d MB free drive space (Sector size [bytes]: %d)", (int)fre_sect, (int)fs->ssize);
-
-	return std::to_string(fre_sect);
+	uint64_t total = 0;
+	uint64_t free = 0;
+	if (esp_vfs_fat_info("/spiffs", &total, &free) != ESP_OK) {
+		return "0";
+	}
+	return std::to_string((unsigned)(free / (1024 * 1024)));
 }
 
 string getSDCardPartitionAllocationSize()
 {
-	FATFS *fs;
-	uint32_t fre_clust, allocation_size;
-
-	/* Get volume information and free clusters of drive 0 */
-	f_getfree("0:", (DWORD *)&fre_clust, &fs);
-	allocation_size = fs->ssize;
-
-	// ESP_LOGD(TAG, "SD Card Partition Allocation Size: %d bytes", allocation_size);
-
-	return std::to_string(allocation_size);
-}
-
-void SaveSDCardInfo(sdmmc_card_t *card)
-{
-	SDCardCid = card->cid;
-	SDCardCsd = card->csd;
-	SDCardIsMMC = card->is_mmc;
+	return "4096";
 }
 
 string getSDCardManufacturer()
 {
-	string SDCardManufacturer = SDCardParseManufacturerIDs(SDCardCid.mfg_id);
-	// ESP_LOGD(TAG, "SD Card Manufacturer: %s", SDCardManufacturer.c_str());
-
-	return (SDCardManufacturer + " (ID: " + std::to_string(SDCardCid.mfg_id) + ")");
+	return "ESP32 internal flash";
 }
 
 string getSDCardName()
 {
-	char *SDCardName = SDCardCid.name;
-	// ESP_LOGD(TAG, "SD Card Name: %s", SDCardName);
-
-	return std::string(SDCardName);
+	return "FATFS (wear-levelled)";
 }
 
 string getSDCardCapacity()
 {
-	int SDCardCapacity = SDCardCsd.capacity / (1024 / SDCardCsd.sector_size) / 1024; // total sectors * sector size  --> Byte to MB (1024*1024)
-	// ESP_LOGD(TAG, "SD Card Capacity: %s", std::to_string(SDCardCapacity).c_str());
-
-	return std::to_string(SDCardCapacity);
+	return getSDCardPartitionSize();
 }
 
 string getSDCardSectorSize()
 {
-	int SDCardSectorSize = SDCardCsd.sector_size;
-	// ESP_LOGD(TAG, "SD Card Sector Size: %s bytes", std::to_string(SDCardSectorSize).c_str());
-
-	return std::to_string(SDCardSectorSize);
+	return "4096";
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -584,6 +542,10 @@ string getFileType(string filename)
 /* recursive mkdir */
 int mkdir_r(const char *dir, const mode_t mode)
 {
+	if (!dir) {
+		return -1;
+	}
+
 	char tmp[FILE_PATH_MAX];
 	char *p = NULL;
 	struct stat sb;
@@ -813,272 +775,6 @@ std::string ReplaceString(std::string subject, const std::string &search, const 
 	}
 
 	return subject;
-}
-
-/* Source: https://git.kernel.org/pub/scm/utils/mmc/mmc-utils.git/tree/lsmmc.c */
-/* SD Card Manufacturer Database */
-struct SDCard_Manufacturer_database
-{
-	string type;
-	int id;
-	string manufacturer;
-};
-
-/* Source: https://git.kernel.org/pub/scm/utils/mmc/mmc-utils.git/tree/lsmmc.c */
-/* SD Card Manufacturer Database */
-struct SDCard_Manufacturer_database sd_database[] = {
-	{
-		.type = "sd",
-		.id = 0x01,
-		.manufacturer = "Panasonic",
-	},
-	{
-		.type = "sd",
-		.id = 0x02,
-		.manufacturer = "Toshiba/Kingston/Viking",
-	},
-	{
-		.type = "sd",
-		.id = 0x03,
-		.manufacturer = "SanDisk",
-	},
-	{
-		.type = "sd",
-		.id = 0x05,
-		.manufacturer = "Lenovo",
-	},
-	{
-		.type = "sd",
-		.id = 0x08,
-		.manufacturer = "Silicon Power",
-	},
-	{
-		.type = "sd",
-		.id = 0x09,
-		.manufacturer = "ATP",
-	},
-	{
-		.type = "sd",
-		.id = 0x18,
-		.manufacturer = "Infineon",
-	},
-	{
-		.type = "sd",
-		.id = 0x1b,
-		.manufacturer = "Transcend/Samsung",
-	},
-	{
-		.type = "sd",
-		.id = 0x1c,
-		.manufacturer = "Transcend",
-	},
-	{
-		.type = "sd",
-		.id = 0x1d,
-		.manufacturer = "Corsair/AData",
-	},
-	{
-		.type = "sd",
-		.id = 0x1e,
-		.manufacturer = "Transcend",
-	},
-	{
-		.type = "sd",
-		.id = 0x1f,
-		.manufacturer = "Kingston",
-	},
-	{
-		.type = "sd",
-		.id = 0x27,
-		.manufacturer = "Delkin/Phison",
-	},
-	{
-		.type = "sd",
-		.id = 0x28,
-		.manufacturer = "Lexar",
-	},
-	{
-		.type = "sd",
-		.id = 0x30,
-		.manufacturer = "SanDisk",
-	},
-	{
-		.type = "sd",
-		.id = 0x31,
-		.manufacturer = "Silicon Power",
-	},
-	{
-		.type = "sd",
-		.id = 0x33,
-		.manufacturer = "STMicroelectronics",
-	},
-	{
-		.type = "sd",
-		.id = 0x41,
-		.manufacturer = "Kingston",
-	},
-	{
-		.type = "sd",
-		.id = 0x6f,
-		.manufacturer = "STMicroelectronics",
-	},
-	{
-		.type = "sd",
-		.id = 0x74,
-		.manufacturer = "Transcend",
-	},
-	{
-		.type = "sd",
-		.id = 0x76,
-		.manufacturer = "Patriot",
-	},
-	{
-		.type = "sd",
-		.id = 0x82,
-		.manufacturer = "Gobe/Sony",
-	},
-	{
-		.type = "sd",
-		.id = 0x89,
-		.manufacturer = "Netac",
-	},
-	{
-		.type = "sd",
-		.id = 0x9f,
-		.manufacturer = "Kingston/Kodak/Silicon Power",
-	},
-	{
-		.type = "sd",
-		.id = 0xad,
-		.manufacturer = "Amazon Basics/Lexar/OV",
-	},
-	{
-		.type = "sd",
-		.id = 0xdf,
-		.manufacturer = "Lenovo",
-	},
-	{
-		.type = "sd",
-		.id = 0xfe,
-		.manufacturer = "Bekit/Cloudisk/HP/Reletech",
-	},
-};
-
-struct SDCard_Manufacturer_database mmc_database[] = {
-	{
-		.type = "mmc",
-		.id = 0x00,
-		.manufacturer = "SanDisk",
-	},
-	{
-		.type = "mmc",
-		.id = 0x02,
-		.manufacturer = "Kingston/SanDisk",
-	},
-	{
-		.type = "mmc",
-		.id = 0x03,
-		.manufacturer = "Toshiba",
-	},
-	{
-		.type = "mmc",
-		.id = 0x05,
-		.manufacturer = "Unknown",
-	},
-	{
-		.type = "mmc",
-		.id = 0x06,
-		.manufacturer = "Unknown",
-	},
-	{
-		.type = "mmc",
-		.id = 0x11,
-		.manufacturer = "Toshiba",
-	},
-	{
-		.type = "mmc",
-		.id = 0x13,
-		.manufacturer = "Micron",
-	},
-	{
-		.type = "mmc",
-		.id = 0x15,
-		.manufacturer = "Samsung/SanDisk/LG",
-	},
-	{
-		.type = "mmc",
-		.id = 0x37,
-		.manufacturer = "KingMax",
-	},
-	{
-		.type = "mmc",
-		.id = 0x44,
-		.manufacturer = "ATP",
-	},
-	{
-		.type = "mmc",
-		.id = 0x45,
-		.manufacturer = "SanDisk Corporation",
-	},
-	{
-		.type = "mmc",
-		.id = 0x2c,
-		.manufacturer = "Kingston",
-	},
-	{
-		.type = "mmc",
-		.id = 0x70,
-		.manufacturer = "Kingston",
-	},
-	{
-		.type = "mmc",
-		.id = 0xfe,
-		.manufacturer = "Micron",
-	},
-};
-
-/* Parse SD Card Manufacturer Database */
-string SDCardParseManufacturerIDs(int id)
-{
-	if (SDCardIsMMC)
-	{
-		unsigned int id_cnt = sizeof(mmc_database) / sizeof(struct SDCard_Manufacturer_database);
-		string ret_val = "";
-
-		for (int i = 0; i < id_cnt; i++)
-		{
-			if (mmc_database[i].id == id)
-			{
-				return mmc_database[i].manufacturer;
-			}
-			else
-			{
-				ret_val = "ID unknown (not in DB)";
-			}
-		}
-
-		return ret_val;
-	}
-
-	else
-	{
-		unsigned int id_cnt = sizeof(sd_database) / sizeof(struct SDCard_Manufacturer_database);
-		string ret_val = "";
-
-		for (int i = 0; i < id_cnt; i++)
-		{
-			if (sd_database[i].id == id)
-			{
-				return sd_database[i].manufacturer;
-			}
-			else
-			{
-				ret_val = "ID unknown (not in DB)";
-			}
-		}
-
-		return ret_val;
-	}
 }
 
 string RundeOutput(double _in, int _anzNachkomma)
