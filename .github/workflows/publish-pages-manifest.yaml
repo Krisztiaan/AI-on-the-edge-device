@@ -96,11 +96,11 @@ jobs:
           <!doctype html>
           <meta charset="utf-8">
           <title>AIOTED Manifest</title>
-          <h1>AIOTED Manifest</h1>
-          <p>Download: <a href="manifest.json">manifest.json</a></p>
-          <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
-          <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
-HTML
+            <h1>AIOTED Manifest</h1>
+            <p>Download: <a href="manifest.json">manifest.json</a></p>
+            <p>Firmware: <a href="firmware.bin">firmware.bin</a></p>
+            <p>Signature: <a href="manifest.json.sig">manifest.json.sig</a></p>
+            HTML
 
       - name: Sign manifest (Ed25519)
         if: ${{ secrets.OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64 != '' }}
