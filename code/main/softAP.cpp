@@ -374,7 +374,9 @@ esp_err_t upload_post_handlerAP(httpd_req_t *req)
     MakeDir("/sdcard/config");
     MakeDir("/sdcard/firmware");
     MakeDir("/sdcard/html");
-    MakeDir("/sdcard/img_tmp");
+    if (JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
+        MakeDir("/sdcard/img_tmp");
+    }
     MakeDir("/sdcard/log");
     MakeDir("/sdcard/demo");
     printf("Nach Start des Post Handlers\n");

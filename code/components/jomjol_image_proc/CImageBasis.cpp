@@ -84,6 +84,11 @@ void writejpghelp(void *context, void *data, int size)
 
 ImageData* CImageBasis::writeToMemoryAsJPG(const int quality)
 {
+#if !JOMJOL_ENABLE_STBI_WRITE
+    (void)quality;
+    LogFile.WriteToFile(ESP_LOG_WARN, TAG, "writeToMemoryAsJPG disabled by build flag (JOMJOL_ENABLE_STBI_WRITE=0)");
+    return NULL;
+#else
     ImageData* ii = new ImageData;
 
     RGBImageLock();
@@ -95,11 +100,18 @@ ImageData* CImageBasis::writeToMemoryAsJPG(const int quality)
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "writeToMemoryAsJPG: Creation aborted! JPG size > preallocated buffer: " + std::to_string(MAX_JPG_SIZE));
     }
     return ii;
+#endif
 }
 
 
 void CImageBasis::writeToMemoryAsJPG(ImageData* i, const int quality)
 {
+#if !JOMJOL_ENABLE_STBI_WRITE
+    (void)i;
+    (void)quality;
+    LogFile.WriteToFile(ESP_LOG_WARN, TAG, "writeToMemoryAsJPG disabled by build flag (JOMJOL_ENABLE_STBI_WRITE=0)");
+    return;
+#else
     ImageData* ii = new ImageData;
     
     RGBImageLock();
@@ -112,6 +124,7 @@ void CImageBasis::writeToMemoryAsJPG(ImageData* i, const int quality)
     }
     memCopy((uint8_t*) ii, (uint8_t*) i, sizeof(ImageData));
     delete ii;
+#endif
 }
 
 
@@ -143,6 +156,11 @@ inline void writejpgtohttphelp(void *context, void *data, int size)
 
 esp_err_t CImageBasis::SendJPGtoHTTP(httpd_req_t *_req, const int quality)
 {
+#if !JOMJOL_ENABLE_STBI_WRITE
+    (void)quality;
+    httpd_resp_send_err(_req, HTTPD_501_METHOD_NOT_IMPLEMENTED, "Image encoding disabled (JOMJOL_ENABLE_STBI_WRITE=0)");
+    return ESP_FAIL;
+#else
     SendJPGHTTP ii;
     ii.req = _req;
     ii.res = ESP_OK;
@@ -163,6 +181,7 @@ esp_err_t CImageBasis::SendJPGtoHTTP(httpd_req_t *_req, const int quality)
     RGBImageRelease();
 
     return ii.res;
+#endif
 }  
 
 
@@ -698,6 +717,11 @@ CImageBasis::~CImageBasis()
 
 void CImageBasis::SaveToFile(std::string _imageout)
 {
+#if !JOMJOL_ENABLE_IMAGE_PERSISTENCE || !JOMJOL_ENABLE_STBI_WRITE
+    (void)_imageout;
+    LogFile.WriteToFile(ESP_LOG_WARN, TAG, "SaveToFile disabled by build flags (persistence/write disabled)");
+    return;
+#else
     string typ = getFileType(_imageout);
 
     RGBImageLock();
@@ -714,6 +738,7 @@ void CImageBasis::SaveToFile(std::string _imageout)
     }
 #endif
     RGBImageRelease();
+#endif
 }
 
 
@@ -752,4 +777,3 @@ void CImageBasis::Resize(int _new_dx, int _new_dy, CImageBasis *_target)
 
     RGBImageRelease();
 }
-

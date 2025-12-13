@@ -46,9 +46,14 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 #include "basic_auth.h"
 #include "../../include/defines.h"
 #include "cJSON.h"
-#include "esp_crt_bundle.h"
+#include "sdkconfig.h"
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+    #include "esp_crt_bundle.h"
+#endif
 #include "mbedtls/sha256.h"
 #include <fstream>
+
+#include "ota_ca_pem.h"
 
 #include "third_party/ed25519-donna/ed25519.h"
 
@@ -106,6 +111,57 @@ static std::string bytes_to_hex(const uint8_t *bytes, size_t len)
     return out;
 }
 
+static const char* get_ota_ca_cert_pem()
+{
+    static std::string cached;
+    if (!cached.empty()) {
+        return cached.c_str();
+    }
+
+    FILE* f = fopen(JOMJOL_OTA_CA_CERT_FILE, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+
+        if (size > 0 && size < 64 * 1024) {
+            cached.resize((size_t)size);
+            size_t read = fread(cached.data(), 1, cached.size(), f);
+            (void)read;
+        }
+        fclose(f);
+    }
+
+    if (!cached.empty()) {
+        if (cached.back() != '\0') {
+            cached.push_back('\0');
+        }
+        return cached.c_str();
+    }
+
+    return OTA_DEFAULT_CA_CERT_PEM;
+}
+
+static esp_err_t apply_tls_settings(esp_http_client_config_t& cfg)
+{
+#if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
+    if (JOMJOL_OTA_USE_CERT_BUNDLE) {
+        cfg.crt_bundle_attach = esp_crt_bundle_attach;
+        return ESP_OK;
+    }
+#endif
+
+    const char* pem = get_ota_ca_cert_pem();
+    if (!pem || pem[0] == '\0') {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA HTTPS: no CA cert available (bundle disabled and no PEM found at " + std::string(JOMJOL_OTA_CA_CERT_FILE) + ")");
+        return ESP_FAIL;
+    }
+
+    cfg.crt_bundle_attach = nullptr;
+    cfg.cert_pem = pem;
+    return ESP_OK;
+}
+
 static esp_err_t http_get_to_string(const std::string &url, std::string &out, size_t max_bytes)
 {
     out.clear();
@@ -114,7 +170,9 @@ static esp_err_t http_get_to_string(const std::string &url, std::string &out, si
     cfg.url = url.c_str();
     cfg.method = HTTP_METHOD_GET;
     cfg.timeout_ms = 15000;
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    if (apply_tls_settings(cfg) != ESP_OK) {
+        return ESP_FAIL;
+    }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {
@@ -267,7 +325,9 @@ static esp_err_t http_download_to_file_with_sha256(const std::string &url,
     cfg.url = url.c_str();
     cfg.method = HTTP_METHOD_GET;
     cfg.timeout_ms = 30000;
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    if (apply_tls_settings(cfg) != ESP_OK) {
+        return ESP_FAIL;
+    }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {
@@ -494,7 +554,9 @@ static esp_err_t http_stream_firmware_to_ota_partition_with_sha256(const std::st
     cfg.url = url.c_str();
     cfg.method = HTTP_METHOD_GET;
     cfg.timeout_ms = 30000;
-    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    if (apply_tls_settings(cfg) != ESP_OK) {
+        return ESP_FAIL;
+    }
 
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (!client) {

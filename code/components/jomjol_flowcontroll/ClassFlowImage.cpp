@@ -46,6 +46,10 @@ ClassFlowImage::ClassFlowImage(std::vector<ClassFlow*> * lfc, ClassFlow *_prev, 
 
 
 string ClassFlowImage::CreateLogFolder(string time) {
+#if !JOMJOL_ENABLE_IMAGE_PERSISTENCE
+    (void)time;
+    return "";
+#endif
 	if (!isLogImage)
 		return "";
 
@@ -59,6 +63,15 @@ string ClassFlowImage::CreateLogFolder(string time) {
 }
 
 void ClassFlowImage::LogImage(string logPath, string name, float *resultFloat, int *resultInt, string time, CImageBasis *_img) {
+#if !JOMJOL_ENABLE_IMAGE_PERSISTENCE
+    (void)logPath;
+    (void)name;
+    (void)resultFloat;
+    (void)resultInt;
+    (void)time;
+    (void)_img;
+    return;
+#endif
 	if (!isLogImage)
 		return;
 	
@@ -137,4 +150,3 @@ void ClassFlowImage::RemoveOldLogs()
     ESP_LOGD(TAG, "Image folder deleted: %d | Image folder not deleted: %d", deleted, notDeleted);	
     closedir(dir);
 }
-

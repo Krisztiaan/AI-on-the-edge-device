@@ -9,6 +9,7 @@
 
 #include "esp_rom_crc.h" 
 #include "ClassLogFile.h"
+#include "../../include/defines.h"
 
 static const char *TAG = "SDCARD";
 
@@ -94,9 +95,11 @@ bool SDCardCheckFolderFilePresence()
     }
 
     /* check if folder exists: img_tmp */
-    if (stat("/sdcard/img_tmp", &sb) != 0) {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Folder/file check: Folder /img_tmp not found");
-        bRetval = false;
+    if (JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
+        if (stat("/sdcard/img_tmp", &sb) != 0) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Folder/file check: Folder /img_tmp not found");
+            bRetval = false;
+        }
     }
 
     /* check if folder exists: log */

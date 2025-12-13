@@ -25,11 +25,17 @@ static const char *TAG = "TAKEIMAGE";
 
 esp_err_t ClassFlowTakeImage::camera_capture(void)
 {
-    string nm = namerawimage;
-    Camera.CaptureToFile(nm);
     time(&TimeImageTaken);
     localtime(&TimeImageTaken);
 
+#if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+    string nm = namerawimage;
+    Camera.CaptureToFile(nm);
+#else
+    if (rawImage) {
+        Camera.CaptureToBasisImage(rawImage, 0);
+    }
+#endif
     return ESP_OK;
 }
 
@@ -48,7 +54,9 @@ void ClassFlowTakeImage::takePictureWithFlash(int flash_duration)
 
     if (CCstatus.SaveAllFiles)
     {
-        rawImage->SaveToFile(namerawimage);
+        if (JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
+            rawImage->SaveToFile(namerawimage);
+        }
     }
 }
 
@@ -533,7 +541,11 @@ ClassFlowTakeImage::ClassFlowTakeImage(std::vector<ClassFlow *> *lfc) : ClassFlo
 string ClassFlowTakeImage::getHTMLSingleStep(string host)
 {
     string result;
+#if JOMJOL_ENABLE_IMAGE_PERSISTENCE
     result = "Raw Image: <br>\n<img src=\"" + host + "/img_tmp/raw.jpg\">\n";
+#else
+    result = "Raw Image: <br>\n<img src=\"" + host + "/capture_last\">\n";
+#endif
     return result;
 }
 

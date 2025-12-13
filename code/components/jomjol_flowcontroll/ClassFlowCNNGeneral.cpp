@@ -450,8 +450,14 @@ string ClassFlowCNNGeneral::getHTMLSingleStep(string host) {
     string result, zw;
     std::vector<HTMLInfo*> htmlinfo;
 
-    result = "<p>Found ROIs: </p> <p><img src=\"" + host + "/img_tmp/alg_roi.jpg\"></p>\n";
-    result = result + "Analog Pointers: <p> ";
+    #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+        result = "<p>Found ROIs: </p> <p><img src=\"" + host + "/img_tmp/alg_roi.jpg\"></p>\n";
+        result = result + "Analog Pointers: <p> ";
+    #else
+        result = "<p>ROI image previews disabled (no image persistence build).</p>\n";
+        result = result + "<p>Last captured image: </p> <p><img src=\"" + host + "/capture_last\"></p>\n";
+        result = result + "<p>Readouts: </p><p>";
+    #endif
 
     htmlinfo = GetHTMLInfo();
     
@@ -460,7 +466,11 @@ string ClassFlowCNNGeneral::getHTMLSingleStep(string host) {
         stream << std::fixed << std::setprecision(1) << htmlinfo[i]->val;
         zw = stream.str();
 
-        result = result + "<img src=\"" + host + "/img_tmp/" +  htmlinfo[i]->filename + "\"> " + zw;
+        #if JOMJOL_ENABLE_IMAGE_PERSISTENCE
+            result = result + "<img src=\"" + host + "/img_tmp/" +  htmlinfo[i]->filename + "\"> " + zw;
+        #else
+            result = result + htmlinfo[i]->filename + ": " + zw + " ";
+        #endif
         delete htmlinfo[i];
     }
     
@@ -511,7 +521,7 @@ bool ClassFlowCNNGeneral::doAlignAndCut(string time) {
             ESP_LOGD(TAG, "General %d - Align&Cut", i);
             
             caic->CutAndSave(GENERAL[_ana]->ROI[i]->posx, GENERAL[_ana]->ROI[i]->posy, GENERAL[_ana]->ROI[i]->deltax, GENERAL[_ana]->ROI[i]->deltay, GENERAL[_ana]->ROI[i]->image_org);
-            if (SaveAllFiles) {
+            if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
                     GENERAL[_ana]->ROI[i]->image_org->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
@@ -521,7 +531,7 @@ bool ClassFlowCNNGeneral::doAlignAndCut(string time) {
             } 
 
             GENERAL[_ana]->ROI[i]->image_org->Resize(modelxsize, modelysize, GENERAL[_ana]->ROI[i]->image);
-            if (SaveAllFiles) {
+            if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
                     GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
@@ -851,7 +861,7 @@ std::vector<HTMLInfo*> ClassFlowCNNGeneral::GetHTMLInfo() {
     for (int _ana = 0; _ana < GENERAL.size(); ++_ana) {
         for (int i = 0; i < GENERAL[_ana]->ROI.size(); ++i) {
             ESP_LOGD(TAG, "Image: %d", (int) GENERAL[_ana]->ROI[i]->image);
-            if (GENERAL[_ana]->ROI[i]->image) {
+            if (GENERAL[_ana]->ROI[i]->image && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
                     GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }

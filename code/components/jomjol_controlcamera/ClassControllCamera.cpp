@@ -1,4 +1,5 @@
 #include "ClassControllCamera.h"
+#include "last_jpeg_cache.h"
 #include "ClassLogFile.h"
 
 #include <stdio.h>
@@ -677,6 +678,20 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
         loadNextDemoImage(fb);
     }
 
+    if (fb->format == PIXFORMAT_JPEG) {
+        (void)last_jpeg_cache::set(fb->buf, fb->len);
+    }
+    else {
+        uint8_t* jpg_buf = NULL;
+        size_t jpg_len = 0;
+        if (frame2jpg(fb, CCstatus.ImageQuality, &jpg_buf, &jpg_len)) {
+            (void)last_jpeg_cache::set(jpg_buf, jpg_len);
+        }
+        if (jpg_buf) {
+            free(jpg_buf);
+        }
+    }
+
     CImageBasis *_zwImage = new CImageBasis("zwImage");
 
     if (_zwImage)
@@ -899,6 +914,7 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
             /* Replace Framebuffer with image from SD-Card */
             loadNextDemoImage(fb);
 
+            (void)last_jpeg_cache::set(fb->buf, fb->len);
             res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
         }
         else
@@ -906,14 +922,25 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
             if (fb->format == PIXFORMAT_JPEG)
             {
                 fb_len = fb->len;
+                (void)last_jpeg_cache::set(fb->buf, fb->len);
                 res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
             }
             else
             {
-                jpg_chunking_t jchunk = {req, 0};
-                res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
-                httpd_resp_send_chunk(req, NULL, 0);
-                fb_len = jchunk.len;
+                uint8_t* jpg_buf = NULL;
+                size_t jpg_len = 0;
+                if (!frame2jpg(fb, 80, &jpg_buf, &jpg_len) || !jpg_buf || jpg_len == 0) {
+                    res = ESP_FAIL;
+                }
+                else {
+                    fb_len = jpg_len;
+                    (void)last_jpeg_cache::set(jpg_buf, jpg_len);
+                    res = httpd_resp_send(req, (const char *)jpg_buf, jpg_len);
+                }
+
+                if (jpg_buf) {
+                    free(jpg_buf);
+                }
             }
         }
     }

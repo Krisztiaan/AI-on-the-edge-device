@@ -122,7 +122,30 @@
 
 
     //ClassFlowControll: Serve alg_roi.jpg from memory as JPG
-    #define ALGROI_LOAD_FROM_MEM_AS_JPG // Load ALG_ROI.JPG as rendered JPG from RAM
+    // Build-time feature toggles (can be overridden via PlatformIO build_flags)
+    #ifndef JOMJOL_ENABLE_IMAGE_PERSISTENCE
+        #define JOMJOL_ENABLE_IMAGE_PERSISTENCE 1
+    #endif
+
+    #ifndef JOMJOL_ENABLE_STBI_WRITE
+        #define JOMJOL_ENABLE_STBI_WRITE 1
+    #endif
+
+    #ifndef JOMJOL_OTA_USE_CERT_BUNDLE
+        #define JOMJOL_OTA_USE_CERT_BUNDLE 1
+    #endif
+
+    #ifndef JOMJOL_OTA_CA_CERT_FILE
+        #define JOMJOL_OTA_CA_CERT_FILE "/sdcard/config/certs/ota_ca.pem"
+    #endif
+
+    #ifndef JOMJOL_MQTT_USE_CERT_BUNDLE
+        #define JOMJOL_MQTT_USE_CERT_BUNDLE 1
+    #endif
+
+    #if JOMJOL_ENABLE_STBI_WRITE
+        #define ALGROI_LOAD_FROM_MEM_AS_JPG // Load ALG_ROI.JPG as rendered JPG from RAM
+    #endif
 
 
     //ClassFlowMQTT
