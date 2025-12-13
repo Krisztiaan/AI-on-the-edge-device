@@ -96,7 +96,7 @@ void ClassFlowImage::LogImage(string logPath, string name, float *resultFloat, i
 
 	string nm = logPath + "/" + buf + name + "_" + time + ".jpg";
 	nm = FormatFileName(nm);
-	string output = "/sdcard/img_tmp/" + name + ".jpg";
+	string output = "/spiffs/img_tmp/" + name + ".jpg";
 	output = FormatFileName(output);
 	ESP_LOGD(logTag, "save to file: %s", nm.c_str());
 	_img->SaveToFile(nm);

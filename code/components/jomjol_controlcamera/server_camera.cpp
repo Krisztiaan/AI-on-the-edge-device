@@ -206,7 +206,7 @@ esp_err_t handler_capture_save_to_file(httpd_req_t *req)
         char _delay[10];
         int delay = 0;
         char filename[100];
-        std::string fn = "/sdcard/";
+        std::string fn = "/spiffs/";
 
         if (httpd_req_get_url_query_str(req, _query, 100) == ESP_OK)
         {

@@ -80,7 +80,7 @@ bool CAlignAndCutImage::Align(RefInfo *_temp1, RefInfo *_temp2)
     zw = zw + "\tpara1_found_min_avg_max_SAD:\t" + std::to_string(_temp1->fastalg_min) + "\t" + std::to_string(_temp1->fastalg_avg) + "\t" + std::to_string(_temp1->fastalg_max) + "\t"+ std::to_string(_temp1->fastalg_SAD);
     zw = zw + "\tt2_x_y:\t" + std::to_string(_temp2->found_x) + "\t" + std::to_string(_temp2->found_y);
     zw = zw + "\tpara2_found_min_avg_max:\t" + std::to_string(_temp2->fastalg_min) + "\t" + std::to_string(_temp2->fastalg_avg) + "\t" + std::to_string(_temp2->fastalg_max) + "\t"+ std::to_string(_temp2->fastalg_SAD);
-    LogFile.WriteToDedicatedFile("/sdcard/alignment.txt", zw);
+    LogFile.WriteToDedicatedFile("/spiffs/alignment.txt", zw);
 #endif*/
 
     CRotateImage rt("Align", this, ImageTMP);

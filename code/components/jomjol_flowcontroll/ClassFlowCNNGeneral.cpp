@@ -327,7 +327,7 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
     while (this->getNextLine(pfile, &aktparamgraph) && !this->isNewParagraph(aktparamgraph)) {
         splitted = ZerlegeZeile(aktparamgraph);
         if ((toUpper(splitted[0]) == "ROIIMAGESLOCATION") && (splitted.size() > 1)) {
-            this->imagesLocation = "/sdcard" + splitted[1];
+            this->imagesLocation = "/spiffs" + splitted[1];
             this->isLogImage = true;
         }
         
@@ -522,20 +522,20 @@ bool ClassFlowCNNGeneral::doAlignAndCut(string time) {
             caic->CutAndSave(GENERAL[_ana]->ROI[i]->posx, GENERAL[_ana]->ROI[i]->posy, GENERAL[_ana]->ROI[i]->deltax, GENERAL[_ana]->ROI[i]->deltay, GENERAL[_ana]->ROI[i]->image_org);
             if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
-                    GENERAL[_ana]->ROI[i]->image_org->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image_org->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
                 else {
-                    GENERAL[_ana]->ROI[i]->image_org->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image_org->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
             } 
 
             GENERAL[_ana]->ROI[i]->image_org->Resize(modelxsize, modelysize, GENERAL[_ana]->ROI[i]->image);
             if (SaveAllFiles && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
-                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
                 else {
-                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
             } 
         }
@@ -576,7 +576,7 @@ bool ClassFlowCNNGeneral::getNetworkParameter() {
     }
 
     CTfLiteClass *tflite = new CTfLiteClass;  
-    string zwcnn = "/sdcard" + cnnmodelfile;
+    string zwcnn = "/spiffs" + cnnmodelfile;
     zwcnn = FormatFileName(zwcnn);
     ESP_LOGD(TAG, "%s", zwcnn.c_str());
     
@@ -650,7 +650,7 @@ bool ClassFlowCNNGeneral::doNeuralNetwork(string time) {
     string logPath = CreateLogFolder(time);
 
     CTfLiteClass *tflite = new CTfLiteClass;  
-    string zwcnn = "/sdcard" + cnnmodelfile;
+    string zwcnn = "/spiffs" + cnnmodelfile;
     zwcnn = FormatFileName(zwcnn);
     ESP_LOGD(TAG, "%s", zwcnn.c_str());
 
@@ -862,10 +862,10 @@ std::vector<HTMLInfo*> ClassFlowCNNGeneral::GetHTMLInfo() {
             ESP_LOGD(TAG, "Image: %d", (int) GENERAL[_ana]->ROI[i]->image);
             if (GENERAL[_ana]->ROI[i]->image && JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
                 if (GENERAL[_ana]->name == "default") {
-                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
                 else {
-                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/sdcard/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
+                    GENERAL[_ana]->ROI[i]->image->SaveToFile(FormatFileName("/spiffs/img_tmp/" + GENERAL[_ana]->name + "_" + GENERAL[_ana]->ROI[i]->name + ".jpg"));
                 }
             }
 

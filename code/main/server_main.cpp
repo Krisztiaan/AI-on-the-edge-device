@@ -85,7 +85,7 @@ esp_err_t info_get_handler(httpd_req_t *req)
     }
     else if (_task.compare("HTMLVersion") == 0)
     {
-        httpd_resp_sendstr(req, getHTMLversion().c_str());
+        httpd_resp_sendstr(req, "remote");
         return ESP_OK;        
     }
     else if (_task.compare("Hostname") == 0)
@@ -247,10 +247,9 @@ esp_err_t hello_main_handler(httpd_req_t *req)
         }
     }
 
-    if (filetosend == "/sdcard/html/index.html") {
-        if (isSetSystemStatusFlag(SYSTEM_STATUS_PSRAM_BAD) || // Initialization failed with crritical errors!
+    if ((strcmp(req->uri, "/") == 0)) {
+        if (isSetSystemStatusFlag(SYSTEM_STATUS_PSRAM_BAD) || // Initialization failed with critical errors!
             isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD) ||
-            isSetSystemStatusFlag(SYSTEM_STATUS_SDCARD_CHECK_BAD) ||
             isSetSystemStatusFlag(SYSTEM_STATUS_FOLDER_CHECK_BAD)) 
         {
             LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "We have a critical error, not serving main page!");
@@ -265,41 +264,32 @@ esp_err_t hello_main_handler(httpd_req_t *req)
                 }
             }
 
-            message += "<br>Please check logs with log viewer and/or <a href=\"https://jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes\" target=_blank>jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes</a> for more information!";
+            message += "<br>Please check logs via the file server and/or <a href=\"https://jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes\" target=_blank>jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes</a> for more information!";
             message += "<br><br><button onclick=\"window.location.href='/reboot';\">Reboot</button>";
-            message += "&nbsp;<button onclick=\"window.open('/ota_page.html');\">OTA Update</button>";
-            message += "&nbsp;<button onclick=\"window.open('/log.html');\">Log Viewer</button>";
-            message += "&nbsp;<button onclick=\"window.open('/info.html');\">Show System Info</button>";
+            message += "&nbsp;<button onclick=\"window.open('/ota');\">OTA Update</button>";
+            message += "&nbsp;<button onclick=\"window.open('/fileserver/');\">File Server</button>";
+            message += "&nbsp;<button onclick=\"window.open('/sysinfo');\">Show System Info</button>";
             httpd_resp_send(req, message.c_str(), message.length());
             return ESP_OK;
         }
-        else if (isSetupModusActive()) {
-            ESP_LOGD(TAG, "System is in setup mode --> index.html --> setup.html");
-            filetosend = "/sdcard/html/setup.html";
-        }
     }
 
-    ESP_LOGD(TAG, "Filename: %s", filename);
-    
-    ESP_LOGD(TAG, "File requested: %s", filetosend.c_str());
+    // No local Web UI is stored on the device (no-SD design). Serve a small landing page
+    // and let users use the remote UI (or call the JSON APIs directly).
+    (void)filename;
+    (void)filepath;
+    (void)_pos;
+    (void)res;
 
-    if (!filename) {
-        ESP_LOGE(TAG, "Filename is too long");
-        /* Respond with 414 Error */
-        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "Filename too long");
-        return ESP_FAIL;
+    std::string message = "<h1>AI on the Edge Device</h1>";
+    if (isSetupModusActive()) {
+        message += "<p><b>Setup mode</b> is active (missing config). Use the file server to upload configuration files.</p>";
     }
-
-    res = send_file(req, filetosend);
-    /* Respond with an empty chunk to signal HTTP response completion */
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    if (res != ESP_OK)
-        return res;
-
-    /* Respond with an empty chunk to signal HTTP response completion */
-//    httpd_resp_sendstr(req, "");
-//    httpd_resp_send_chunk(req, NULL, 0);
+    message += "<p>Web UI is hosted externally. Open: <a href=\"https://ai-meter.krsz.dev/\" target=_blank>ai-meter.krsz.dev</a></p>";
+    message += "<p>Local endpoints: <a href=\"/sysinfo\">/sysinfo</a>, <a href=\"/fileserver/\">/fileserver/</a>, <a href=\"/ota\">/ota</a></p>";
+    message += "<p>Tip: For offline setup, use the file server to upload `config/config.ini` and `wlan.ini`.</p>";
+    httpd_resp_send(req, message.c_str(), message.length());
+    return ESP_OK;
 
 #ifdef DEBUG_DETAIL_ON      
     LogFile.WriteHeapInfo("hello_main_handler - Stop");   
@@ -380,7 +370,7 @@ esp_err_t sysinfo_handler(httpd_req_t *req)
     std::string gitbranch = libfive_git_branch();
     std::string gittag = libfive_git_version();
     std::string gitrevision = libfive_git_revision();
-    std::string htmlversion = getHTMLversion();
+    std::string htmlversion = "remote";
     char freeheapmem[11];
     sprintf(freeheapmem, "%lu", (long) getESPHeapSize());
     

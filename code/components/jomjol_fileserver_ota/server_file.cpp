@@ -27,7 +27,6 @@ extern "C" {
 #include "esp_log.h"
 
 #include "esp_vfs.h"
-#include <esp_spiffs.h>
 #include "esp_http_server.h"
 
 #include "../../include/defines.h"
@@ -87,8 +86,8 @@ esp_err_t get_data_file_handler(httpd_req_t *req)
     std::string _filename, _fileext;
     size_t pos = 0;
     
-    const char verz_name[] = "/sdcard/log/data";
-    ESP_LOGD(TAG, "Suche data files in /sdcard/log/data");
+    const char verz_name[] = "/spiffs/log/data";
+    ESP_LOGD(TAG, "Suche data files in /spiffs/log/data");
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "text/plain");
@@ -130,8 +129,8 @@ esp_err_t get_tflite_file_handler(httpd_req_t *req)
     std::string _filename, _fileext;
     size_t pos = 0;
     
-    const char verz_name[] = "/sdcard/config";
-    ESP_LOGD(TAG, "Suche TFLITE in /sdcard/config/");
+    const char verz_name[] = "/spiffs/config";
+    ESP_LOGD(TAG, "Suche TFLITE in /spiffs/config/");
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "text/plain");
@@ -796,7 +795,7 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
 //////////////////////////////////////////////////////////////
     char _query[200];
     char _valuechar[30];    
-    std::string fn = "/sdcard/firmware/";
+    std::string fn = "/spiffs/firmware/";
     std::string _task;
     std::string directory;
     std::string zw; 
@@ -828,7 +827,7 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
         zw = std::string(filename);
         zw = zw.substr(0, zw.length()-1);
         directory = "/fileserver" + zw + "/";
-        zw = "/sdcard" + zw;
+        zw = "/spiffs" + zw;
         ESP_LOGD(TAG, "Directory to delete: %s", zw.c_str());
 
         delete_all_in_directory(zw);

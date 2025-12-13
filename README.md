@@ -12,7 +12,7 @@
 - [Setup 🛠️](#setup-%EF%B8%8F)
 - [Download 🔽](#download-)
 - [Flashing the ESP32 💾](#flashing-the-esp32-)
-- [Flashing the SD Card 💾](#flashing-the-sd-card-)
+- [Storage 💾](#storage-)
 - [Casing 🛠️](#casing-%EF%B8%8F)
 - [Donate ☕](#donate-)
 - [Support 💬](#support-)
@@ -140,7 +140,7 @@ The latest available version can be found on the [Releases page](https://github.
 Initially, you will have to flash the ESP32 via a USB connection. Later updates are possible directly over the air (OTA using Wi-Fi).
 
 This fork also supports an “online update” flow via a GitHub Pages `manifest.json` (and optional on-demand model downloads). If you enable manifest signing:
-- Put the Ed25519 public key (32-byte, hex) in `/sdcard/config/ota_pubkey_ed25519.hex`.
+- Put the Ed25519 public key (32-byte, hex) in `/spiffs/config/ota_pubkey_ed25519.hex`.
 - Configure GitHub Actions secret `OTA_MANIFEST_ED25519_PRIVATE_KEY_PEM_B64` to publish `manifest.json.sig`.
 
 There are different ways to flash your ESP32:
@@ -155,10 +155,8 @@ See the [documentation](https://jomjol.github.io/AI-on-the-edge-device-docs/Inst
 
 <br>
 
-## Flashing the SD Card 💾
-The SD card can be set up automatically after the firmware is installed. See the [documentation](https://jomjol.github.io/AI-on-the-edge-device-docs/Installation/#remote-setup-using-the-built-in-access-point) for details. For this to work, the SD card must be FAT formatted (which is the default on a new SD card).
-
-Alternatively, the SD card can still be set up manually. See the [documentation](https://jomjol.github.io/AI-on-the-edge-device-docs/Installation/#3-sd-card) for details.
+## Storage 💾
+This fork is designed to run without an SD card. Configuration and runtime files are stored in internal flash at `/spiffs`.
 
 ---
 

@@ -1223,11 +1223,11 @@ void CCamera::useDemoMode(void)
 {
     char line[50];
 
-    FILE *fd = fopen("/sdcard/demo/files.txt", "r");
+    FILE *fd = fopen("/spiffs/demo/files.txt", "r");
 
     if (!fd)
     {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Can not start Demo mode, the folder '/sdcard/demo/' does not contain the needed files!");
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Can not start Demo mode, the folder '/spiffs/demo/' does not contain the needed files!");
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "See Details on https://jomjol.github.io/AI-on-the-edge-device-docs/Demo-Mode!");
         return;
     }
@@ -1264,7 +1264,7 @@ bool CCamera::loadNextDemoImage(camera_fb_t *fb)
     int readBytes;
     long fileSize;
 
-    snprintf(filename, sizeof(filename), "/sdcard/demo/%s", demoFiles[getCountFlowRounds() % demoFiles.size()].c_str());
+    snprintf(filename, sizeof(filename), "/spiffs/demo/%s", demoFiles[getCountFlowRounds() % demoFiles.size()].c_str());
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Using " + std::string(filename) + " as demo image");
 

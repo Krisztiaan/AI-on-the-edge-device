@@ -10,15 +10,8 @@
 
 #include "esp_chip_info.h"
 
-// SD-Card ////////////////////
-#include "esp_vfs_fat.h"
-#include "ffconf.h"
-#include "driver/sdmmc_host.h"
-
-#if (ESP_IDF_VERSION <= ESP_IDF_VERSION_VAL(5, 1, 2))
-#include "sdcard_init.h"
-#endif
-///////////////////////////////
+#include <esp_vfs_fat.h>
+#include <wear_levelling.h>
 
 #include "ClassLogFile.h"
 
@@ -42,7 +35,6 @@
 #endif //ENABLE_MQTT
 #include "Helper.h"
 #include "statusled.h"
-#include "sdcard_check.h"
 
 #include "../../include/defines.h"
 
@@ -96,7 +88,7 @@ bool setCpuFrequency(void);
 
 static const char *TAG = "MAIN";
 
-#define MOUNT_POINT "/sdcard"
+#define MOUNT_POINT "/spiffs"
 
 static bool should_count_for_bootloop(esp_reset_reason_t reason)
 {
@@ -158,118 +150,36 @@ static void bootloop_clear_task(void *pvParameter)
     vTaskDelete(NULL);
 }
 
-bool Init_NVS_SDCard()
+static bool Init_NVS_Storage()
 {
     esp_err_t ret = nvs_flash_init();
-	
+			
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
 
-    ESP_LOGD(TAG, "Using SDMMC peripheral");
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-
-    // For SoCs where the SD power can be supplied both via an internal or external (e.g. on-board LDO) power supply.
-    // When using specific IO pins (which can be used for ultra high-speed SDMMC) to connect to the SD card
-    // and the internal LDO power supply, we need to initialize the power supply first.
-#if SD_PWR_CTRL_LDO_INTERNAL_IO
-    sd_pwr_ctrl_ldo_config_t ldo_config = {
-        .ldo_chan_id = CONFIG_EXAMPLE_SD_PWR_CTRL_LDO_IO_ID,
-    };
-    sd_pwr_ctrl_handle_t pwr_ctrl_handle = NULL;
-
-    ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &pwr_ctrl_handle);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to create a new on-chip LDO power control driver");
-        return false;
-    }
-    host.pwr_ctrl_handle = pwr_ctrl_handle;
-#endif
-
-    // This initializes the slot without card detect (CD) and write protect (WP) signals.
-    // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
-#ifdef CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-    sdmmc_slot_config_t slot_config = {
-        .cd = SDMMC_SLOT_NO_CD,
-        .wp = SDMMC_SLOT_NO_WP,
-    };
-#else
-    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-#endif
-
-    // Set bus width to use:
-#ifdef __SD_USE_ONE_LINE_MODE__
-    slot_config.width = 1;
-#ifdef CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-    slot_config.clk = GPIO_SDCARD_CLK;
-    slot_config.cmd = GPIO_SDCARD_CMD;
-    slot_config.d0 = GPIO_SDCARD_D0;
-#endif // end CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-#else  // else __SD_USE_ONE_LINE_MODE__
-    slot_config.width = 4;
-#ifdef CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-    slot_config.d1 = GPIO_SDCARD_D1;
-    slot_config.d2 = GPIO_SDCARD_D2;
-    slot_config.d3 = GPIO_SDCARD_D3;
-#endif // end CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-#endif // end __SD_USE_ONE_LINE_MODE__
-
-    // Enable internal pullups on enabled pins. The internal pullups
-    // are insufficient however, please make sure 10k external pullups are
-    // connected on the bus. This is for debug / example purpose only.
-    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
-
-    // Der PullUp des GPIO13 wird durch slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
-    // nicht gesetzt, da er eigentlich nicht benötigt wird, 
-    // dies führt jedoch bei schlechten Kopien des AI_THINKER Boards
-    // zu Problemen mit der SD Initialisierung und eventuell sogar zur reboot-loops.
-    // Um diese Probleme zu kompensieren, wird der PullUp manuel gesetzt.
-    gpio_set_pull_mode(GPIO_SDCARD_D3, GPIO_PULLUP_ONLY); // HS2_D3	
-
-    // Options for mounting the filesystem.
-    // If format_if_mount_failed is set to true, SD card will be partitioned and
-    // formatted in case when mounting fails.
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false,
-        .max_files = 12,                         // previously -> 2022-09-21: 5, 2023-01-02: 7 
-        .allocation_unit_size = 0,               // 0 = auto
-        .disk_status_check_enable = 0,
-    };
-
-    sdmmc_card_t* card;
-    const char mount_point[] = MOUNT_POINT;
-
-    // Use settings defined above to initialize SD card and mount FAT filesystem.
-    // Note: esp_vfs_fat_sdmmc_mount is an all-in-one convenience function.
-    // Please check its source code and implement error recovery when developing
-    // production applications.
-#if (ESP_IDF_VERSION <= ESP_IDF_VERSION_VAL(5, 1, 2))
-    ret = esp_vfs_fat_sdmmc_mount_mh(mount_point, &host, &slot_config, &mount_config, &card);
-#else
-    ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
-#endif
-
     if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount FAT filesystem on SD card. Check SD card filesystem (only FAT supported) or try another card");
-            StatusLED(SDCARD_INIT, 1, true);
-        } 
-        else if (ret == 263) { // Error code: 0x107 --> usually: SD not found
-            ESP_LOGE(TAG, "SD card init failed. Check if SD card is properly inserted into SD card slot or try another card");
-            StatusLED(SDCARD_INIT, 2, true);
-        }
-        else {
-            ESP_LOGE(TAG, "SD card init failed. Check error code or try another card");
-            StatusLED(SDCARD_INIT, 3, true);
-        }
+        ESP_LOGE(TAG, "NVS init failed: %d", (int)ret);
         return false;
     }
 
-    //sdmmc_card_print_info(stdout, card);  // With activated CONFIG_NEWLIB_NANO_FORMAT --> capacity not printed correctly anymore
-    SaveSDCardInfo(card);
+    static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+    const esp_vfs_fat_mount_config_t mount_config = {
+        .format_if_mount_failed = true,
+        .max_files = 12,
+        .allocation_unit_size = 4096,
+        .disk_status_check_enable = 0,
+        .use_one_fat = false,
+    };
+
+    ret = esp_vfs_fat_spiflash_mount_rw_wl(MOUNT_POINT, "storage", &mount_config, &wl_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "FATFS (wear-levelled) mount failed: %d", (int)ret);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Mounted FATFS (wear-levelled) at %s", MOUNT_POINT);
     return true;
 }
 
@@ -296,15 +206,15 @@ extern "C" void app_main(void)
     // ********************************************
     ESP_LOGI(TAG, "\n\n\n\n================ Start app_main =================");
  
-    // Init SD card
+    // Init NVS + internal flash storage (no SD card)
     // ********************************************
-    if (!Init_NVS_SDCard())
+    if (!Init_NVS_Storage())
     {
         ESP_LOGE(TAG, "Device init aborted!");
-        return; // No way to continue without working SD card!
+        return; // No way to continue without storage
     }
 
-    // SD card: Create log directories (if not already existing)
+    // Create log directories (if not already existing)
     // ********************************************
     LogFile.CreateLogDirectories(); // mandatory for logging + image saving
 
@@ -339,31 +249,14 @@ extern "C" void app_main(void)
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "==================== Start ======================");
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "=================================================");
 
-    // SD card: basic R/W check
+    // Create mandatory paths (internal flash storage)
     // ********************************************
-    int iSDCardStatus = SDCardCheckRW();
-    if (iSDCardStatus < 0) {
-        if (iSDCardStatus <= -1 && iSDCardStatus >= -2) { // write error
-            StatusLED(SDCARD_CHECK, 1, true);
-        }
-        else if (iSDCardStatus <= -3 && iSDCardStatus >= -5) { // read error
-            StatusLED(SDCARD_CHECK, 2, true);
-        }
-        else if (iSDCardStatus == -6) { // delete error
-            StatusLED(SDCARD_CHECK, 3, true);
-        }
-        setSystemStatusFlag(SYSTEM_STATUS_SDCARD_CHECK_BAD); // reduced web interface going to be loaded
-    }
-
-    // SD card: Create further mandatory directories (if not already existing)
-    // Correct creation of these folders will be checked with function "SDCardCheckFolderFilePresence"
-    // ********************************************
-    MakeDir("/sdcard/firmware");         // mandatory for OTA firmware update
+    (void)MakeDir("/spiffs/firmware");         // mandatory for OTA firmware update
     if (JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
-        MakeDir("/sdcard/img_tmp");          // temporary images / alignment previews
+        (void)MakeDir("/spiffs/img_tmp");          // temporary images / alignment previews
     }
-    MakeDir("/sdcard/demo");             // mandatory for demo mode
-    MakeDir("/sdcard/config/certs");     // mandatory for mqtt certificates
+    (void)MakeDir("/spiffs/demo");             // optional demo mode
+    (void)MakeDir("/spiffs/config/certs");     // mqtt / ota certs
 
     // Check for updates
     // ********************************************
@@ -472,7 +365,7 @@ extern "C" void app_main(void)
     // ********************************************
     migrateConfiguration();
 
-    // Init time (as early as possible, but SD card needs to be initialized)
+    // Init time (as early as possible, but storage needs to be initialized)
     // ********************************************
     setupTime();    // NTP time service: Status of time synchronization will be checked after every round (server_tflite.cpp)
 
@@ -481,36 +374,20 @@ extern "C" void app_main(void)
     setCpuFrequency();
 
     // Start SoftAP for initial remote setup
-    // Note: Start AP if no wlan.ini and/or config.ini available, e.g. SD card empty; function does not exit anymore until reboot
+    // Note: Start AP if no wlan.ini and/or config.ini available; function does not exit anymore until reboot
     // ********************************************
     #ifdef ENABLE_SOFTAP
         CheckStartAPMode(); 
     #endif
 
-    // SD card: Check presence of some mandatory folders / files
-    // ********************************************
-    if (!SDCardCheckFolderFilePresence()) {
-        StatusLED(SDCARD_CHECK, 4, true);
-        setSystemStatusFlag(SYSTEM_STATUS_FOLDER_CHECK_BAD); // reduced web interface going to be loaded
-    }
-
     // Check version information
     // ********************************************
-    std::string versionFormated = getFwVersion() + ", Date/Time: " + std::string(BUILD_TIME) + \
-        ", Web UI: " + getHTMLversion();
+    std::string versionFormated = getFwVersion() + ", Date/Time: " + std::string(BUILD_TIME);
 
     if (std::string(GIT_TAG) != "") { // We are on a tag, add it as prefix
         versionFormated = "Tag: '" + std::string(GIT_TAG) + "', " + versionFormated;
     }
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, versionFormated);
-
-    if (getHTMLcommit().substr(0, 7) == "?")
-        LogFile.WriteToFile(ESP_LOG_WARN, TAG, std::string("Failed to read file html/version.txt to parse Web UI version"));
- 
-    if (getHTMLcommit().substr(0, 7) != std::string(GIT_REV).substr(0, 7)) { // Compare the first 7 characters of both hashes
-        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Web UI version (" + getHTMLcommit() + ") does not match firmware version (" + std::string(GIT_REV) + ")");
-        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Recommendation: Repeat installation using AI-on-the-edge-device__update__*.zip");    
-    }
 
     // Check reboot reason
     // ********************************************
@@ -599,10 +476,9 @@ extern "C" void app_main(void)
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Device info: CPU cores: " + std::to_string(chipInfo.cores) + 
                                            ", Chip revision: " + std::to_string(chipInfo.revision));
     
-    // Print SD-Card info
+    // Print storage info
     // ********************************************
-    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "SD card info: Name: " + getSDCardName() + ", Capacity: " + 
-                        getSDCardCapacity() + "MB, Free: " + getSDCardFreePartitionSpace() + "MB");
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Storage (flash): Total: " + getSDCardPartitionSize() + "MB, Free: " + getSDCardFreePartitionSpace() + "MB");
 
     xDelay = 2000 / portTICK_PERIOD_MS;
     ESP_LOGD(TAG, "main: sleep for: %ldms", (long) xDelay * CONFIG_FREERTOS_HZ/portTICK_PERIOD_MS);
@@ -615,8 +491,8 @@ extern "C" void app_main(void)
     server = start_webserver();   
     register_server_camera_uri(server); 
     register_server_main_flow_task_uri(server);
-    register_server_file_uri(server, "/sdcard");
-    register_server_ota_sdcard_uri(server);
+    register_server_file_uri(server, "/spiffs");
+    register_server_ota_uri(server);
     StartOTAVerifyMonitor();
     #ifdef ENABLE_MQTT
         register_server_mqtt_uri(server);
@@ -625,7 +501,7 @@ extern "C" void app_main(void)
     gpio_handler_create(server);
 
     ESP_LOGD(TAG, "Before reg server main");
-    register_server_main_uri(server, "/sdcard");
+    register_server_main_uri(server, "/spiffs");
 
     // Only for testing purpose
     //setSystemStatusFlag(SYSTEM_STATUS_CAM_FB_BAD);

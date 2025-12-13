@@ -187,7 +187,7 @@ esp_err_t config_ini_handler(httpd_req_t *req)
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "config_ini_handler");
     char _query[400];
     char _valuechar[100];    
-    std::string fn = "/sdcard/firmware/";
+    std::string fn = "/spiffs/firmware/";
     std::string _task = "";
     std::string ssid = "";
     std::string pwd = "";
@@ -357,21 +357,20 @@ esp_err_t config_ini_handler(httpd_req_t *req)
 esp_err_t upload_post_handlerAP(httpd_req_t *req)
 {
     printf("Start des Post Handlers\n");
-    MakeDir("/sdcard/config");
-    MakeDir("/sdcard/firmware");
-    MakeDir("/sdcard/html");
+    MakeDir("/spiffs/config");
+    MakeDir("/spiffs/firmware");
     if (JOMJOL_ENABLE_IMAGE_PERSISTENCE) {
-        MakeDir("/sdcard/img_tmp");
+        MakeDir("/spiffs/img_tmp");
     }
-    MakeDir("/sdcard/log");
-    MakeDir("/sdcard/demo");
+    MakeDir("/spiffs/log");
+    MakeDir("/spiffs/demo");
     printf("Nach Start des Post Handlers\n");
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "upload_post_handlerAP");
     char filepath[FILE_PATH_MAX];
     FILE *fd = NULL;
 
-    const char *filename = get_path_from_uri(filepath, "/sdcard",
+    const char *filename = get_path_from_uri(filepath, "/spiffs",
                                              req->uri + sizeof("/upload") - 1, sizeof(filepath));
     if (!filename) {
         httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "Filename too long");
@@ -432,8 +431,8 @@ esp_err_t upload_post_handlerAP(httpd_req_t *req)
     fclose(fd);
     isConfigINI = true;
 
-    FILE* pfile = fopen("/sdcard/update.txt", "w");
-    std::string _s_zw= "/sdcard" + std::string(filename);
+    FILE* pfile = fopen("/spiffs/update.txt", "w");
+    std::string _s_zw= "/spiffs" + std::string(filename);
     fwrite(_s_zw.c_str(), strlen(_s_zw.c_str()), 1, pfile);
     fclose(pfile);
 

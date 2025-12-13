@@ -109,7 +109,7 @@ bool ClassFlowMQTT::ReadParameter(FILE* pfile, string& aktparamgraph)
         std::string _param = GetParameterName(splitted[0]);
         if ((toUpper(_param) == "CACERT") && (splitted.size() > 1))
         {
-            this->caCertFilename = "/sdcard" + splitted[1];
+            this->caCertFilename = "/spiffs" + splitted[1];
         }
         if ((toUpper(_param) == "VALIDATESERVERCERT") && (splitted.size() > 1))
         {
@@ -117,11 +117,11 @@ bool ClassFlowMQTT::ReadParameter(FILE* pfile, string& aktparamgraph)
         }  
         if ((toUpper(_param) == "CLIENTCERT") && (splitted.size() > 1))
         {
-            this->clientCertFilename = "/sdcard" + splitted[1];
+            this->clientCertFilename = "/spiffs" + splitted[1];
         }  
         if ((toUpper(_param) == "CLIENTKEY") && (splitted.size() > 1))
         {
-            this->clientKeyFilename = "/sdcard" + splitted[1];
+            this->clientKeyFilename = "/spiffs" + splitted[1];
         }  
         if ((toUpper(_param) == "USER") && (splitted.size() > 1))
         {

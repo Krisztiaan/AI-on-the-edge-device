@@ -241,7 +241,7 @@ static bool read_file_trimmed(const std::string &path, std::string &out)
 
 static bool load_ota_manifest_pubkey_ed25519(ed25519_public_key out_pk)
 {
-    static const char *kPath = "/sdcard/config/ota_pubkey_ed25519.hex";
+    static const char *kPath = "/spiffs/config/ota_pubkey_ed25519.hex";
 
     std::string hex;
     if (!read_file_trimmed(kPath, hex)) {
@@ -267,7 +267,7 @@ static bool verify_manifest_signature_if_configured(const std::string &manifest_
         static bool logged = false;
         if (!logged) {
             logged = true;
-            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Manifest signature verification is disabled (missing /sdcard/config/ota_pubkey_ed25519.hex)");
+            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Manifest signature verification is disabled (missing /spiffs/config/ota_pubkey_ed25519.hex)");
         }
         return true;
     }
@@ -665,7 +665,7 @@ void task_do_Update_ZIP(void *pvParameter)
 void CheckUpdate()
 {
  	FILE *pfile;
-    if ((pfile = fopen("/sdcard/update.txt", "r")) == NULL)
+    if ((pfile = fopen("/spiffs/update.txt", "r")) == NULL)
     {
 		LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "No pending update");
         return;
@@ -684,7 +684,7 @@ void CheckUpdate()
 	}
 
     fclose(pfile);
-    DeleteFile("/sdcard/update.txt");   // Prevent Boot Loop!!!
+    DeleteFile("/spiffs/update.txt");   // Prevent Boot Loop!!!
 	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Start update process (" + _file_name_update + ")");
 
 
@@ -973,7 +973,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
     char _valuechar[30];
     char _manifest_url[420] = {0};
     char _model_name[100] = {0};
-    std::string fn = "/sdcard/firmware/";
+    std::string fn = "/spiffs/firmware/";
     bool _file_del = false;
     std::string _task = "";
 
@@ -1102,7 +1102,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
             return ESP_OK;
         }
 
-        const std::string dest = "/sdcard/config/" + model_name;
+        const std::string dest = "/spiffs/config/" + model_name;
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Downloading model: " + model_url);
         err = http_download_to_file_with_sha256(model_url, dest, model_sha256, 3 * 1024 * 1024);
         if (err != ESP_OK) {
@@ -1118,7 +1118,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
     if (_task.compare("emptyfirmwaredir") == 0)
     {
         ESP_LOGD(TAG, "Start empty directory /firmware");
-        delete_all_in_directory("/sdcard/firmware");
+        delete_all_in_directory("/spiffs/firmware");
         std::string zw = "firmware directory deleted - v2\n";
         ESP_LOGD(TAG, "%s", zw.c_str());
         printf("Ausgabe: %s\n", zw.c_str());
@@ -1145,7 +1145,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
 
         if ((filetype == "TFLITE") || (filetype == "TFL"))
         {
-            std::string out = "/sdcard/config/" + getFileFullFileName(fn);
+            std::string out = "/spiffs/config/" + getFileFullFileName(fn);
             DeleteFile(out);
             CopyFile(fn, out);
             DeleteFile(fn);
@@ -1161,7 +1161,7 @@ esp_err_t handler_ota_update(httpd_req_t *req)
         {
            	FILE *pfile;
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Update for reboot");
-            pfile = fopen("/sdcard/update.txt", "w");
+            pfile = fopen("/spiffs/update.txt", "w");
             fwrite(fn.c_str(), fn.length(), 1, pfile);
             fclose(pfile);
 
@@ -1280,7 +1280,7 @@ void hard_restart()
 void task_reboot(void *DeleteMainFlow)
 {
     // write a reboot, to identify a reboot by purpouse
-    FILE* pfile = fopen("/sdcard/reboot.txt", "w");
+    FILE* pfile = fopen("/spiffs/reboot.txt", "w");
     std::string _s_zw= "reboot";
     fwrite(_s_zw.c_str(), strlen(_s_zw.c_str()), 1, pfile);
     fclose(pfile);
@@ -1376,7 +1376,7 @@ esp_err_t handler_reboot(httpd_req_t *req)
 }
 
 
-void register_server_ota_sdcard_uri(httpd_handle_t server)
+void register_server_ota_uri(httpd_handle_t server)
 {
     ESP_LOGI(TAG, "Registering URI handlers");
     

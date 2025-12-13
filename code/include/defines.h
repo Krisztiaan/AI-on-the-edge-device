@@ -68,8 +68,8 @@
 
 
     //server_GPIO + server_file + SoftAP
-    #define CONFIG_FILE "/sdcard/config/config.ini"
-    #define CONFIG_FILE_BACKUP "/sdcard/config/config.bak"
+    #define CONFIG_FILE "/spiffs/config/config.ini"
+    #define CONFIG_FILE_BACKUP "/spiffs/config/config.bak"
 
 
     //interface_mqtt + read_wlanini
@@ -77,7 +77,7 @@
 
 
     //ClassFlowControll + Main + SoftAP
-    #define WLAN_CONFIG_FILE "/sdcard/wlan.ini"
+    #define WLAN_CONFIG_FILE "/spiffs/wlan.ini"
 
 
     //main
@@ -136,7 +136,7 @@
     #endif
 
     #ifndef JOMJOL_OTA_CA_CERT_FILE
-        #define JOMJOL_OTA_CA_CERT_FILE "/sdcard/config/certs/ota_ca.pem"
+        #define JOMJOL_OTA_CA_CERT_FILE "/spiffs/config/certs/ota_ca.pem"
     #endif
 
     #ifndef JOMJOL_MQTT_USE_CERT_BUNDLE
@@ -225,13 +225,13 @@
 /////////////////////////////////////////////
 
 
-// ******* Board type   
-#if defined(BOARD_WROVER_KIT) // WROVER-KIT PIN Map
-	// SD card (operated with SDMMC peripheral)
-	//-------------------------------------------------
-	#define GPIO_SDCARD_CLK GPIO_NUM_14
-	#define GPIO_SDCARD_CMD GPIO_NUM_15
-	#define GPIO_SDCARD_D0  GPIO_NUM_2
+	// ******* Board type   
+	#if defined(BOARD_WROVER_KIT) // WROVER-KIT PIN Map
+		// SD card pins (unused in no-SD builds)
+		//-------------------------------------------------
+		#define GPIO_SDCARD_CLK GPIO_NUM_14
+		#define GPIO_SDCARD_CMD GPIO_NUM_15
+		#define GPIO_SDCARD_D0  GPIO_NUM_2
 	#ifndef __SD_USE_ONE_LINE_MODE__
 		#define GPIO_SDCARD_D1 GPIO_NUM_4
 		#define GPIO_SDCARD_D2 GPIO_NUM_12
@@ -294,12 +294,12 @@
     #define USE_PWM_LEDFLASH                    // if __LEDGLOBAL is defined, a global variable is used for LED control, otherwise locally and each time a new
 
 
-#elif defined(BOARD_ESP32CAM_AITHINKER) // ESP32Cam (AiThinker) PIN Map
-	// SD card (operated with SDMMC peripheral)
-	//-------------------------------------------------
-	#define GPIO_SDCARD_CLK GPIO_NUM_14
-	#define GPIO_SDCARD_CMD GPIO_NUM_15
-	#define GPIO_SDCARD_D0  GPIO_NUM_2
+	#elif defined(BOARD_ESP32CAM_AITHINKER) // ESP32Cam (AiThinker) PIN Map
+		// SD card pins (unused in no-SD builds)
+		//-------------------------------------------------
+		#define GPIO_SDCARD_CLK GPIO_NUM_14
+		#define GPIO_SDCARD_CMD GPIO_NUM_15
+		#define GPIO_SDCARD_D0  GPIO_NUM_2
 	#ifndef __SD_USE_ONE_LINE_MODE__
 		#define GPIO_SDCARD_D1 GPIO_NUM_4
 		#define GPIO_SDCARD_D2 GPIO_NUM_12
