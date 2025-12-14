@@ -87,6 +87,46 @@ static std::string sanitizeHomeAssistantId(std::string value) {
     return out;
 }
 
+static bool sendHomeAssistantDiscoveryUpdateEntity(int qos)
+{
+    std::string version = std::string(libfive_git_version());
+    if (version == "") {
+        version = std::string(libfive_git_branch()) + " (" + std::string(libfive_git_revision()) + ")";
+    }
+
+    const std::string node_id = createNodeId(maintopic);
+    const std::string configTopic = "fw_update";
+    const std::string topicFull = "homeassistant/update/" + node_id + "/" + configTopic + "/config";
+
+    const std::string object_id = maintopic + "_" + configTopic;
+    std::string payload = string("{") +
+        "\"~\": \"" + maintopic + "\"," +
+        "\"unique_id\": \"" + maintopic + "-" + configTopic + "\"," +
+        "\"object_id\": \"" + object_id + "\"," +
+        "\"default_entity_id\": \"update." + sanitizeHomeAssistantId(object_id) + "\"," +
+        "\"name\": \"Firmware Update\"," +
+        "\"icon\": \"mdi:cloud-upload\"," +
+        "\"command_topic\": \"~/ctrl/ota\"," +
+        "\"payload_install\": \"install\"," +
+        "\"installed_version_topic\": \"~/fwVersion\"," +
+        "\"latest_version_topic\": \"~/ota/latest_version\"," +
+        "\"entity_category\": \"config\"," +
+        "\"availability_topic\": \"~/" + std::string(LWT_TOPIC) + "\"," +
+        "\"payload_available\": \"" + LWT_CONNECTED + "\"," +
+        "\"payload_not_available\": \"" + LWT_DISCONNECTED + "\"," +
+        "\"device\": {" +
+            "\"identifiers\": [\"" + maintopic + "\"]," +
+            "\"name\": \"" + maintopic + "\"," +
+            "\"model\": \"Meter Digitizer\"," +
+            "\"manufacturer\": \"AI on the Edge Device\"," +
+            "\"sw_version\": \"" + version + "\"," +
+            "\"configuration_url\": \"http://" + *getIPAddress() + "\"" +
+        "}" +
+    "}";
+
+    return MQTTPublish(topicFull, payload, qos, true);
+}
+
 bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
     std::string name, std::string icon, std::string unit, std::string deviceClass, std::string stateClass, std::string entityCategory,
     int qos) {
@@ -112,6 +152,9 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
         component = "binary_sensor";
     }
     else if (field == "flowstart") { // Special case: Button
+        component = "button";
+    }
+    else if (field == "ota_check") { // Special case: Button
         component = "button";
     }
     else {
@@ -153,6 +196,10 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
         }
         else if (field == "flowstart") { // Special case: Button
             payload += "\"cmd_t\":\"~/ctrl/flow_start\","; // Add command topic
+        }
+        else if (field == "ota_check") { // Special case: Button
+            payload += "\"cmd_t\":\"~/ctrl/ota\",";
+            payload += "\"payload_press\":\"check\",";
         }
         else {
             payload += "\"state_topic\": \"~/" + field + "\",";
@@ -209,6 +256,8 @@ bool MQTThomeassistantDiscovery(int qos) {
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "uptime",          "Uptime",            "progress-clock",           "s",   "duration",        "measurement", "diagnostic", qos);
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "MAC",             "MAC Address",       "network-outline",          "",    "",                "",            "diagnostic", qos);
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "fwVersion",       "Firmware Version",  "application-outline",      "",    "",                "",            "diagnostic", qos);
+    allSendsSuccessed |= sendHomeAssistantDiscoveryUpdateEntity(qos);
+    allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "ota_check",       "Check Firmware Update", "cloud-refresh",         "",    "",                "",            "config",     qos);
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "hostname",        "Hostname",          "network-outline",          "",    "",                "",            "diagnostic", qos);
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "freeMem",         "Free Memory",       "memory",                   "B",   "",                "measurement", "diagnostic", qos);
     allSendsSuccessed |= sendHomeAssistantDiscoveryTopic("",     "wifiRSSI",        "Wi-Fi RSSI",        "wifi",                     "dBm", "signal_strength", "",            "diagnostic", qos);

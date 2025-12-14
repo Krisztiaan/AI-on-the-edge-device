@@ -759,6 +759,25 @@ static bool parse_manifest_firmware_bin(const std::string &manifest_json, std::s
     return ok;
 }
 
+static bool parse_manifest_firmware_info(const std::string &manifest_json, std::string &out_url, std::string &out_sha256, std::string &out_tag)
+{
+    out_tag.clear();
+    if (!parse_manifest_firmware_bin(manifest_json, out_url, out_sha256)) {
+        return false;
+    }
+
+    cJSON *root = cJSON_Parse(manifest_json.c_str());
+    if (!root) return true; // url+sha already parsed; tag is optional.
+
+    cJSON *fw = cJSON_GetObjectItemCaseSensitive(root, "firmware");
+    cJSON *tag = fw ? cJSON_GetObjectItemCaseSensitive(fw, "tag") : NULL;
+    if (cJSON_IsString(tag) && (tag->valuestring != NULL)) {
+        out_tag = tag->valuestring;
+    }
+    cJSON_Delete(root);
+    return true;
+}
+
 static bool parse_manifest_model(const std::string &manifest_json, const std::string &model_name, std::string &out_url, std::string &out_sha256)
 {
     out_url.clear();
@@ -901,6 +920,95 @@ static esp_err_t http_stream_firmware_to_ota_partition_with_sha256(const std::st
         return err;
     }
 
+    return ESP_OK;
+}
+
+esp_err_t OtaCheckFirmwareManifest(const std::string &manifest_url, std::string &out_latest_tag, std::string &out_error)
+{
+    out_latest_tag.clear();
+    out_error.clear();
+
+    if (manifest_url.empty()) {
+        out_error = "Missing manifest URL";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    std::string manifest;
+    esp_err_t err = http_get_to_string(manifest_url, manifest, 64 * 1024);
+    if (err != ESP_OK) {
+        out_error = "Failed to fetch manifest";
+        return err;
+    }
+
+    std::string sig_err;
+    if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
+        out_error = sig_err.empty() ? "Manifest signature verification failed" : sig_err;
+        return ESP_FAIL;
+    }
+
+    std::string fw_url;
+    std::string fw_sha256;
+    std::string fw_tag;
+    if (!parse_manifest_firmware_info(manifest, fw_url, fw_sha256, fw_tag)) {
+        out_error = "Invalid manifest (expected keys: firmware.url, firmware.sha256)";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!is_valid_sha256_hex(fw_sha256)) {
+        out_error = "Invalid firmware sha256 in manifest";
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    out_latest_tag = fw_tag;
+    return ESP_OK;
+}
+
+esp_err_t OtaInstallFirmwareFromManifest(const std::string &manifest_url, std::string &out_error)
+{
+    out_error.clear();
+
+    if (manifest_url.empty()) {
+        out_error = "Missing manifest URL";
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "MQTT OTA: downloading firmware manifest: " + manifest_url);
+    std::string manifest;
+    esp_err_t err = http_get_to_string(manifest_url, manifest, 64 * 1024);
+    if (err != ESP_OK) {
+        out_error = "Failed to fetch manifest";
+        return err;
+    }
+
+    std::string sig_err;
+    if (!verify_manifest_signature_if_configured(manifest_url, manifest, sig_err)) {
+        out_error = sig_err.empty() ? "Manifest signature verification failed" : sig_err;
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "MQTT OTA: manifest signature error: " + out_error);
+        return ESP_FAIL;
+    }
+
+    std::string fw_url;
+    std::string fw_sha256;
+    std::string fw_tag;
+    if (!parse_manifest_firmware_info(manifest, fw_url, fw_sha256, fw_tag)) {
+        out_error = "Invalid manifest (expected keys: firmware.url, firmware.sha256)";
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!is_valid_sha256_hex(fw_sha256)) {
+        out_error = "Invalid firmware sha256 in manifest";
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "MQTT OTA: streaming firmware: " + fw_url);
+    err = http_stream_firmware_to_ota_partition_with_sha256(fw_url, fw_sha256);
+    if (err != ESP_OK) {
+        out_error = "Firmware update failed (" + std::string(esp_err_to_name(err)) + ")";
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "MQTT OTA: streaming failed: " + out_error);
+        return err;
+    }
+
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "MQTT OTA: rebooting after firmware update");
+    doRebootOTA();
     return ESP_OK;
 }
 

@@ -531,6 +531,110 @@ bool mqtt_handler_model_update(std::string _topic, char* _data, int _data_len)
     return ESP_FAIL;
 }
 
+static std::string trim_ascii(const std::string &s)
+{
+    size_t start = 0;
+    while (start < s.size() && (s[start] == ' ' || s[start] == '\r' || s[start] == '\n' || s[start] == '\t')) start++;
+    size_t end = s.size();
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\r' || s[end - 1] == '\n' || s[end - 1] == '\t')) end--;
+    return s.substr(start, end - start);
+}
+
+static bool read_ota_manifest_url(std::string &out)
+{
+    out.clear();
+    std::string content;
+    if (!ReadFileToString("/spiffs/config/ota_manifest_url.txt", content, 4096)) {
+        return false;
+    }
+    out = trim_ascii(content);
+    return !out.empty();
+}
+
+bool mqtt_handler_ota(std::string _topic, char* _data, int _data_len)
+{
+    (void)_topic;
+
+    const std::string statusTopic = maintopic + "/status/ota";
+    const std::string latestVersionTopic = maintopic + "/ota/latest_version";
+
+    std::string action;
+    std::string manifest_url;
+
+    if (_data && _data_len > 0) {
+        cJSON *jsonData = cJSON_ParseWithLength(_data, _data_len);
+        if (jsonData) {
+            cJSON *a = cJSON_GetObjectItemCaseSensitive(jsonData, "action");
+            if (!cJSON_IsString(a) || !a->valuestring) {
+                a = cJSON_GetObjectItemCaseSensitive(jsonData, "cmd");
+            }
+            if (cJSON_IsString(a) && a->valuestring) {
+                action = toLower(trim_ascii(a->valuestring));
+            }
+
+            cJSON *m = cJSON_GetObjectItemCaseSensitive(jsonData, "manifest");
+            if (!cJSON_IsString(m) || !m->valuestring) {
+                m = cJSON_GetObjectItemCaseSensitive(jsonData, "manifest_url");
+            }
+            if (cJSON_IsString(m) && m->valuestring) {
+                manifest_url = trim_ascii(m->valuestring);
+            }
+
+            cJSON_Delete(jsonData);
+        } else {
+            action = toLower(trim_ascii(std::string(_data, _data_len)));
+            if (action.rfind("http://", 0) == 0 || action.rfind("https://", 0) == 0) {
+                manifest_url = action;
+                action = "install";
+            }
+        }
+    }
+
+    if (action.empty()) {
+        action = "install";
+    }
+
+    if (manifest_url.empty()) {
+        (void)read_ota_manifest_url(manifest_url);
+    }
+
+    if (manifest_url.empty()) {
+        const std::string payload = "{\"status\":\"error\",\"error\":\"Missing manifest URL (set /spiffs/config/ota_manifest_url.txt or pass manifest_url)\"}";
+        MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+        return ESP_FAIL;
+    }
+
+    if (action == "check") {
+        std::string latest_tag;
+        std::string err;
+        esp_err_t res = OtaCheckFirmwareManifest(manifest_url, latest_tag, err);
+        if (res == ESP_OK) {
+            if (!latest_tag.empty()) {
+                MQTTPublish(latestVersionTopic, latest_tag, 0, SetRetainFlag);
+            }
+            const std::string payload = "{\"status\":\"ok\",\"action\":\"check\",\"latest_version\":\"" + latest_tag + "\"}";
+            MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+            return ESP_OK;
+        }
+        const std::string payload = "{\"status\":\"error\",\"action\":\"check\",\"error\":\"" + (err.empty() ? std::string(esp_err_to_name(res)) : err) + "\"}";
+        MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+        return ESP_FAIL;
+    }
+
+    if (action == "install" || action == "update") {
+        MQTTPublish(statusTopic, "{\"status\":\"running\",\"action\":\"install\"}", 0, SetRetainFlag);
+        std::string err;
+        esp_err_t res = OtaInstallFirmwareFromManifest(manifest_url, err);
+        const std::string payload = "{\"status\":\"error\",\"action\":\"install\",\"error\":\"" + (err.empty() ? std::string(esp_err_to_name(res)) : err) + "\"}";
+        MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+        return ESP_FAIL;
+    }
+
+    const std::string payload = "{\"status\":\"error\",\"error\":\"Unsupported action (use check|install)\"}";
+    MQTTPublish(statusTopic, payload, 0, SetRetainFlag);
+    return ESP_FAIL;
+}
+
 void MQTTconnected(){
     if (mqtt_connected) {
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Connected to broker");
@@ -553,6 +657,9 @@ void MQTTconnected(){
 
         std::function<bool(std::string topic, char* data, int data_len)> subHandler3 = mqtt_handler_model_update;
         MQTTregisterSubscribeFunction(maintopic + "/ctrl/model", subHandler3);            // subscribe to maintopic/ctrl/model
+
+        std::function<bool(std::string topic, char* data, int data_len)> subHandler4 = mqtt_handler_ota;
+        MQTTregisterSubscribeFunction(maintopic + "/ctrl/ota", subHandler4);              // subscribe to maintopic/ctrl/ota
 
        if (subscribeFunktionMap != NULL) {
             for(std::map<std::string, std::function<bool(std::string, char*, int)>>::iterator it = subscribeFunktionMap->begin(); it != subscribeFunktionMap->end(); ++it) {
