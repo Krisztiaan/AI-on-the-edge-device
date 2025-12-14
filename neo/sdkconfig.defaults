@@ -1,0 +1,8 @@
+# Keep defaults minimal until features are added.
+# (We will add explicit feature-gated defaults as NEO grows.)
+
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+
+# ESP32-CAM is a 4MB flash part; keep Kconfig aligned to avoid boot/runtime mismatch warnings.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

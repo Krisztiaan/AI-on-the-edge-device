@@ -1,0 +1,22 @@
+menu "NEO"
+
+config NEO_ENABLE_HTTP
+    bool "Enable local HTTP management UI"
+    default y
+
+config NEO_ENABLE_SOFTAP
+    bool "Enable SoftAP provisioning"
+    default y
+
+config NEO_SOFTAP_SSID
+    string "SoftAP SSID"
+    default "ai-meter-neo"
+    depends on NEO_ENABLE_SOFTAP
+
+config NEO_SOFTAP_PASSWORD
+    string "SoftAP password (empty = open)"
+    default ""
+    depends on NEO_ENABLE_SOFTAP
+
+endmenu
+

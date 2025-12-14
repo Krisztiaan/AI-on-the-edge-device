@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.16)
+
+if(EXISTS "${SDKCONFIG}.defaults")
+    if(EXISTS "sdkconfig.defaults")
+        set(SDKCONFIG_DEFAULTS "${SDKCONFIG}.defaults;sdkconfig.defaults")
+        message(STATUS "-- Using defaults: ${SDKCONFIG_DEFAULTS}")
+    else()
+        set(SDKCONFIG_DEFAULTS "${SDKCONFIG}.defaults")
+        message(STATUS "-- Using defaults: ${SDKCONFIG_DEFAULTS}")
+    endif()
+elseif(EXISTS "sdkconfig.defaults")
+    set(SDKCONFIG_DEFAULTS "sdkconfig.defaults")
+    message(STATUS "-- Using defaults: ${SDKCONFIG_DEFAULTS}")
+endif()
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(aiot_neo)
