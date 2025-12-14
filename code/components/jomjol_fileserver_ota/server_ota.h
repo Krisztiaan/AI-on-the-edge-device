@@ -29,4 +29,10 @@ esp_err_t DownloadModel(const std::string &url,
                         size_t &out_bytes,
                         std::string &out_error);
 
+// Fetches a firmware manifest and returns its advertised tag (if present).
+esp_err_t OtaCheckFirmwareManifest(const std::string &manifest_url, std::string &out_latest_tag, std::string &out_error);
+
+// Streams firmware.bin from the manifest to the OTA partition, verifies SHA-256, and reboots on success.
+esp_err_t OtaInstallFirmwareFromManifest(const std::string &manifest_url, std::string &out_error);
+
 #endif //SERVEROTA_H
