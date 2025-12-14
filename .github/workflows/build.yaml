@@ -4,7 +4,7 @@ on:
     push:
     pull_request:
     release:
-        types: [released] # Only trigger on published releases (not drafts or pre-released)
+        types: [published] # Trigger on published releases (incl. prereleases); not drafts
 
 jobs:
 #########################################################################################
