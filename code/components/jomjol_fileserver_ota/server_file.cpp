@@ -127,6 +127,13 @@ esp_err_t get_tflite_file_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "text/plain");
 
+    auto is_model_name = [&](const std::string &filename) {
+        return (filename.size() >= 4 && filename.compare(filename.size() - 4, 4, ".tfl") == 0) ||
+               (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tflite") == 0) ||
+               (filename.size() >= 10 && filename.compare(filename.size() - 10, 10, ".tflite.gz") == 0) ||
+               (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tfl.gz") == 0);
+    };
+
     auto list_dir = [&](const char *dir_path, const char *prefix) {
         DIR *dir = opendir(dir_path);
         if (!dir) {
@@ -143,11 +150,7 @@ esp_err_t get_tflite_file_handler(httpd_req_t *req)
                 continue;
             }
 
-            const bool is_tflite = (filename.size() >= 4 && filename.compare(filename.size() - 4, 4, ".tfl") == 0) ||
-                                   (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tflite") == 0) ||
-                                   (filename.size() >= 10 && filename.compare(filename.size() - 10, 10, ".tflite.gz") == 0) ||
-                                   (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tfl.gz") == 0);
-            if (!is_tflite) {
+            if (!is_model_name(filename)) {
                 continue;
             }
 
@@ -160,6 +163,47 @@ esp_err_t get_tflite_file_handler(httpd_req_t *req)
     ESP_LOGD(TAG, "Suche TFLITE in /spiffs/config/ and /spiffs/models/");
     list_dir("/spiffs/config", "/config/");
     list_dir("/spiffs/models", "/models/");
+
+    // Also list sha-subfolders under /spiffs/models/<sha256>/<filename>
+    DIR *models_dir = opendir("/spiffs/models");
+    if (models_dir) {
+        struct dirent *entry;
+        while ((entry = readdir(models_dir)) != NULL) {
+            if (entry->d_type != DT_DIR) {
+                continue;
+            }
+            std::string sub(entry->d_name);
+            if (sub.rfind(".", 0) == 0) {
+                continue;
+            }
+            if (sub.size() != 64) {
+                continue;
+            }
+            bool hex = true;
+            for (char c : sub) {
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                    hex = false;
+                    break;
+                }
+            }
+            if (!hex) continue;
+
+            const std::string dir_path = std::string("/spiffs/models/") + sub;
+            DIR *d = opendir(dir_path.c_str());
+            if (!d) continue;
+            struct dirent *e2;
+            while ((e2 = readdir(d)) != NULL) {
+                if (e2->d_type != DT_REG) continue;
+                std::string fn(e2->d_name);
+                if (fn.rfind(".", 0) == 0) continue;
+                if (!is_model_name(fn)) continue;
+                std::string out = std::string("/models/") + sub + "/" + fn + "\t";
+                httpd_resp_sendstr_chunk(req, out.c_str());
+            }
+            closedir(d);
+        }
+        closedir(models_dir);
+    }
 
     httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;

@@ -12,6 +12,7 @@
 #include "cJSON.h"
 #include "../../include/defines.h"
 #include "server_ota.h"
+#include "Helper.h"
 #include "sdkconfig.h"
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
     #include "esp_crt_bundle.h"
@@ -472,25 +473,46 @@ bool mqtt_handler_model_update(std::string _topic, char* _data, int _data_len)
     }
 
     cJSON *url = cJSON_GetObjectItemCaseSensitive(jsonData, "url");
+    cJSON *base_url = cJSON_GetObjectItemCaseSensitive(jsonData, "base_url");
     cJSON *name = cJSON_GetObjectItemCaseSensitive(jsonData, "name");
     cJSON *sha256 = cJSON_GetObjectItemCaseSensitive(jsonData, "sha256");
     cJSON *overwrite = cJSON_GetObjectItemCaseSensitive(jsonData, "overwrite");
     cJSON *set_active = cJSON_GetObjectItemCaseSensitive(jsonData, "set_active");
-
-    if (!cJSON_IsString(url) || !url->valuestring) {
-        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "handler_model_update: missing required 'url' string");
-        cJSON_Delete(jsonData);
-        return ESP_FAIL;
-    }
 
     const std::string name_s = (cJSON_IsString(name) && name->valuestring) ? std::string(name->valuestring) : std::string();
     const std::string sha_s = (cJSON_IsString(sha256) && sha256->valuestring) ? std::string(sha256->valuestring) : std::string();
     const bool overwrite_b = cJSON_IsBool(overwrite) ? cJSON_IsTrue(overwrite) : false;
     const bool set_active_b = cJSON_IsBool(set_active) ? cJSON_IsTrue(set_active) : true;
 
+    std::string url_s;
+    if (cJSON_IsString(url) && url->valuestring) {
+        url_s = std::string(url->valuestring);
+    } else {
+        std::string base;
+        if (cJSON_IsString(base_url) && base_url->valuestring) {
+            base = std::string(base_url->valuestring);
+        } else {
+            // optional: configure via /spiffs/config/model_repo_base_url.txt
+            std::string content;
+            if (ReadFileToString("/spiffs/config/model_repo_base_url.txt", content, 4096)) {
+                base = trim(content);
+            }
+        }
+
+        if (base.empty() || name_s.empty() || sha_s.empty()) {
+            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "handler_model_update: provide either url, or base_url+name+sha256");
+            cJSON_Delete(jsonData);
+            return ESP_FAIL;
+        }
+
+        url_s = base;
+        if (!url_s.empty() && url_s.back() == '/') url_s.pop_back();
+        url_s += "/" + sha_s + "/" + name_s;
+    }
+
     std::string got_sha, err;
     size_t bytes = 0;
-    esp_err_t res = DownloadModel(url->valuestring, name_s, sha_s, overwrite_b, set_active_b, got_sha, bytes, err);
+    esp_err_t res = DownloadModel(url_s, name_s, sha_s, overwrite_b, set_active_b, got_sha, bytes, err);
     cJSON_Delete(jsonData);
 
     std::string statusTopic = maintopic + "/status/model";

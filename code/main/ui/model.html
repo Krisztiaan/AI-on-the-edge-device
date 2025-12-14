@@ -10,7 +10,8 @@
 <body>
 <div class="content">
     <h2>Model download</h2>
-    <p>Downloads a single model to <code>/spiffs/models</code> and optionally marks it active for <code>MODEL=AUTO</code>.</p>
+    <p>Downloads a model to <code>/spiffs/models</code> and optionally marks it active for <code>MODEL=AUTO</code>.</p>
+    <p>If you provide a SHA-256, the file is stored deterministically at <code>/spiffs/models/&lt;sha256&gt;/&lt;name&gt;</code>.</p>
 
     <table>
         <tr><td style="width:140px">URL</td><td><input id="m_url" style="width: 100%" placeholder="https://.../model.tflite.gz"></td></tr>
