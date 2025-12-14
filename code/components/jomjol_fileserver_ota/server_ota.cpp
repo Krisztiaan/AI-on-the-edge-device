@@ -28,6 +28,7 @@ https://docs.espressif.com/projects/esp-idf/en/latest/esp32/migration-guides/rel
 // #include "protocol_examples_common.h"
 #include "errno.h"
 
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -361,6 +362,50 @@ static bool write_text_file_atomic(const std::string &path, const std::string &c
 }
 
 static const char *kActiveModelFile = "/spiffs/config/active_model.txt";
+static const char *kModelRepoBaseUrlFile = "/spiffs/config/model_repo_base_url.txt";
+
+static std::string trim_ascii_whitespace(const std::string &s);
+
+static bool is_hex_lower_64(const std::string &s)
+{
+    if (s.size() != 64) return false;
+    for (char c : s) {
+        if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')) return false;
+    }
+    return true;
+}
+
+static std::string basename_only(const std::string &path)
+{
+    size_t pos = path.find_last_of('/');
+    if (pos == std::string::npos) return path;
+    return path.substr(pos + 1);
+}
+
+static bool read_model_repo_base_url(std::string &out)
+{
+    out.clear();
+    std::string content;
+    if (!ReadFileToString(kModelRepoBaseUrlFile, content, 4096)) {
+        return false;
+    }
+    out = trim_ascii_whitespace(content);
+    return !out.empty();
+}
+
+static std::string resolve_model_rel_path(const std::string &name_or_path, const std::string &sha256_lower)
+{
+    std::string name = name_or_path;
+    if (name.empty()) name = "model.tflite.gz";
+    if (name.find('/') != std::string::npos) {
+        name = basename_only(name);
+    }
+
+    if (!sha256_lower.empty() && is_hex_lower_64(sha256_lower)) {
+        return std::string("/models/") + sha256_lower + "/" + name;
+    }
+    return std::string("/models/") + name;
+}
 
 esp_err_t DownloadModel(const std::string &url,
                         const std::string &name,
@@ -380,21 +425,26 @@ esp_err_t DownloadModel(const std::string &url,
         return ESP_ERR_INVALID_ARG;
     }
 
-    const std::string name_s = name.empty() ? "model.tflite.gz" : name;
+    const std::string name_s = name.empty() ? "model.tflite.gz" : basename_only(name);
     if (name_s.find('/') != std::string::npos || name_s.find("..") != std::string::npos) {
         out_error = "Invalid name";
         return ESP_ERR_INVALID_ARG;
     }
 
     const std::string expected = to_lower_ascii(expected_sha256);
-    if (!is_hex_sha256(expected)) {
+    if (!expected.empty() && !is_hex_sha256(expected)) {
         out_error = "Invalid sha256 (expected 64 hex chars)";
         return ESP_ERR_INVALID_ARG;
     }
 
     (void)MakeDir("/spiffs/models");
     (void)MakeDir("/spiffs/config");
-    std::string final_path = std::string("/spiffs/models/") + name_s;
+    if (!expected.empty()) {
+        (void)MakeDir(std::string("/spiffs/models/") + expected);
+    }
+
+    const std::string rel_path = resolve_model_rel_path(name_s, expected);
+    std::string final_path = std::string("/spiffs") + rel_path;
     std::string tmp_path = final_path + ".part";
 
     struct stat st;
@@ -429,7 +479,7 @@ esp_err_t DownloadModel(const std::string &url,
     }
 
     if (set_active) {
-        const std::string active = std::string("/models/") + name_s + "\n";
+        const std::string active = rel_path + "\n";
         if (!write_text_file_atomic(kActiveModelFile, active)) {
             out_error = "Failed to write active model marker";
             return ESP_FAIL;
@@ -1646,13 +1696,264 @@ static esp_err_t handler_models_download(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, err_str.empty() ? "Model download failed" : err_str.c_str());
     }
 
-    const std::string name_s = (name[0] == '\0') ? "model.tflite.gz" : std::string(name);
-    std::string response = "{\"path\":\"/models/" + name_s + "\",\"bytes\":" + std::to_string(bytes) + ",\"sha256\":\"" + got_sha + "\"";
+    const std::string name_s = (name[0] == '\0') ? "model.tflite.gz" : basename_only(std::string(name));
+    const std::string sha_s = to_lower_ascii(std::string(sha));
+    const std::string rel_path = resolve_model_rel_path(name_s, is_hex_lower_64(sha_s) ? sha_s : "");
+
+    std::string response = "{\"path\":\"" + rel_path + "\",\"bytes\":" + std::to_string(bytes) + ",\"sha256\":\"" + got_sha + "\"";
     if (set_active) response += ",\"active\":true";
     response += "}";
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, response.c_str(), response.size());
+    return ESP_OK;
+}
+
+static bool is_model_filename(const std::string &filename)
+{
+    return (filename.size() >= 4 && filename.compare(filename.size() - 4, 4, ".tfl") == 0) ||
+           (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tflite") == 0) ||
+           (filename.size() >= 10 && filename.compare(filename.size() - 10, 10, ".tflite.gz") == 0) ||
+           (filename.size() >= 7 && filename.compare(filename.size() - 7, 7, ".tfl.gz") == 0);
+}
+
+struct RequiredModel
+{
+    std::string filename;
+    std::string sha256;
+    std::string rel_path; // /models/...
+};
+
+static bool collect_required_models_from_config(std::vector<RequiredModel> &out)
+{
+    out.clear();
+
+    FILE *f = fopen(CONFIG_FILE, "rb");
+    if (!f) {
+        return false;
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        std::string s = trim(std::string(line));
+        if (s.empty()) continue;
+        if (s[0] == ';' || s[0] == '#') continue;
+
+        size_t eq = s.find('=');
+        if (eq == std::string::npos) continue;
+
+        std::string key = toUpper(trim(s.substr(0, eq)));
+        std::string val = trim(s.substr(eq + 1));
+
+        if (key == "MODEL") {
+            RequiredModel m;
+            m.sha256.clear();
+
+            // Allow "name@sha256" inline.
+            size_t at = val.find('@');
+            if (at != std::string::npos) {
+                m.filename = basename_only(trim(val.substr(0, at)));
+                m.sha256 = to_lower_ascii(trim(val.substr(at + 1)));
+            } else {
+                m.filename = basename_only(val);
+            }
+
+            if (!m.filename.empty() && is_model_filename(m.filename)) {
+                m.rel_path = resolve_model_rel_path(m.filename, is_hex_lower_64(m.sha256) ? m.sha256 : "");
+                out.push_back(m);
+            }
+        } else if (key == "MODEL_SHA256" || key == "MODELSHA256") {
+            if (!out.empty()) {
+                out.back().sha256 = to_lower_ascii(val);
+                if (is_hex_lower_64(out.back().sha256)) {
+                    out.back().rel_path = resolve_model_rel_path(out.back().filename, out.back().sha256);
+                }
+            }
+        }
+    }
+
+    fclose(f);
+    return true;
+}
+
+static void collect_stored_models(std::vector<std::string> &out_paths)
+{
+    out_paths.clear();
+
+    DIR *dir = opendir("/spiffs/models");
+    if (!dir) {
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string name(entry->d_name);
+        if (name.rfind(".", 0) == 0) continue;
+
+        int dtype = entry->d_type;
+        if (dtype == DT_UNKNOWN) {
+            struct stat st;
+            std::string p = std::string("/spiffs/models/") + name;
+            if (stat(p.c_str(), &st) == 0) {
+                if (S_ISREG(st.st_mode)) dtype = DT_REG;
+                else if (S_ISDIR(st.st_mode)) dtype = DT_DIR;
+            }
+        }
+
+        if (dtype == DT_REG) {
+            if (is_model_filename(name)) {
+                out_paths.push_back(std::string("/models/") + name);
+            }
+            continue;
+        }
+
+        if (dtype == DT_DIR) {
+            std::string sha = name;
+            if (!is_hex_lower_64(sha)) continue;
+
+            std::string subdir = std::string("/spiffs/models/") + sha;
+            DIR *d2 = opendir(subdir.c_str());
+            if (!d2) continue;
+            struct dirent *e2;
+            while ((e2 = readdir(d2)) != NULL) {
+                std::string fn(e2->d_name);
+                if (fn.rfind(".", 0) == 0) continue;
+
+                int d2type = e2->d_type;
+                if (d2type == DT_UNKNOWN) {
+                    struct stat st2;
+                    std::string p2 = subdir + "/" + fn;
+                    if (stat(p2.c_str(), &st2) == 0) {
+                        if (S_ISREG(st2.st_mode)) d2type = DT_REG;
+                    }
+                }
+                if (d2type != DT_REG) continue;
+                if (!is_model_filename(fn)) continue;
+                out_paths.push_back(std::string("/models/") + sha + "/" + fn);
+            }
+            closedir(d2);
+        }
+    }
+    closedir(dir);
+}
+
+static esp_err_t handler_models_sync(httpd_req_t *req)
+{
+    char query[512];
+    char base_url_buf[256];
+    char prune_buf[8];
+    char dry_run_buf[8];
+
+    base_url_buf[0] = '\0';
+    prune_buf[0] = '\0';
+    dry_run_buf[0] = '\0';
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        (void)httpd_query_key_value(query, "base_url", base_url_buf, sizeof(base_url_buf));
+        (void)httpd_query_key_value(query, "prune", prune_buf, sizeof(prune_buf));
+        (void)httpd_query_key_value(query, "dry_run", dry_run_buf, sizeof(dry_run_buf));
+    }
+
+    const bool prune = (prune_buf[0] == '1' || prune_buf[0] == 'y' || prune_buf[0] == 'Y' || prune_buf[0] == 't' || prune_buf[0] == 'T');
+    const bool dry_run = !(dry_run_buf[0] == '0' || dry_run_buf[0] == 'n' || dry_run_buf[0] == 'N' || dry_run_buf[0] == 'f' || dry_run_buf[0] == 'F');
+
+    std::string base_url = std::string(base_url_buf);
+    base_url = trim_ascii_whitespace(base_url);
+    if (base_url.empty()) {
+        (void)read_model_repo_base_url(base_url);
+    }
+    if (!base_url.empty() && base_url.back() == '/') base_url.pop_back();
+
+    std::vector<RequiredModel> required;
+    if (!collect_required_models_from_config(required)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read config.ini");
+    }
+
+    std::vector<std::string> missing;
+    std::vector<std::string> downloaded;
+    std::vector<std::string> deleted;
+
+    std::vector<std::string> required_paths;
+    required_paths.reserve(required.size());
+    for (const auto &m : required) {
+        required_paths.push_back(m.rel_path);
+    }
+
+    for (const auto &m : required) {
+        const std::string full = std::string("/spiffs") + m.rel_path;
+        struct stat st;
+        if (stat(full.c_str(), &st) == 0) {
+            continue;
+        }
+        missing.push_back(m.rel_path);
+
+        if (dry_run) {
+            continue;
+        }
+        if (base_url.empty() || m.sha256.empty() || !is_hex_lower_64(m.sha256)) {
+            continue;
+        }
+        std::string url = base_url + "/" + m.sha256 + "/" + m.filename;
+        std::string got_sha, err;
+        size_t bytes = 0;
+        esp_err_t res = DownloadModel(url, m.filename, m.sha256, true /*overwrite*/, false /*set_active*/, got_sha, bytes, err);
+        if (res == ESP_OK) {
+            downloaded.push_back(m.rel_path);
+        } else {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model sync download failed: " + m.rel_path + " (" + (err.empty() ? std::string(esp_err_to_name(res)) : err) + ")");
+        }
+    }
+
+    if (prune) {
+        std::vector<std::string> stored;
+        collect_stored_models(stored);
+        for (const auto &p : stored) {
+            bool keep = false;
+            for (const auto &r : required_paths) {
+                if (p == r) {
+                    keep = true;
+                    break;
+                }
+            }
+            if (keep) continue;
+
+            deleted.push_back(p);
+            if (!dry_run) {
+                (void)unlink((std::string("/spiffs") + p).c_str());
+            }
+        }
+    }
+
+    // Emit response
+    std::string resp = "{";
+    resp += "\"base_url\":\"" + base_url + "\",";
+    resp += "\"dry_run\":" + std::string(dry_run ? "true" : "false") + ",";
+    resp += "\"prune\":" + std::string(prune ? "true" : "false") + ",";
+
+    auto arr = [&](const char *key, const std::vector<std::string> &v) {
+        resp += "\"";
+        resp += key;
+        resp += "\":[";
+        for (size_t i = 0; i < v.size(); i++) {
+            if (i) resp += ",";
+            resp += "\"";
+            resp += v[i];
+            resp += "\"";
+        }
+        resp += "],";
+    };
+
+    arr("required", required_paths);
+    arr("missing", missing);
+    arr("downloaded", downloaded);
+    arr("deleted", deleted);
+
+    if (!resp.empty() && resp.back() == ',') resp.pop_back();
+    resp += "}";
+
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, resp.c_str(), resp.size());
     return ESP_OK;
 }
 
@@ -1678,6 +1979,12 @@ void register_server_ota_uri(httpd_handle_t server)
     camuri.uri       = "/models/download";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_models_download);
     camuri.user_ctx  = (void*) "Download model";
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.method    = HTTP_GET;
+    camuri.uri       = "/models/sync";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_models_sync);
+    camuri.user_ctx  = (void*) "Sync models";
     httpd_register_uri_handler(server, &camuri);
 
 }

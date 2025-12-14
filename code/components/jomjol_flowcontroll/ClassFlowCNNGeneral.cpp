@@ -314,6 +314,7 @@ int ClassFlowCNNGeneral::PointerEvalAnalogNew(float number, int numeral_preceder
 
 bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
     std::vector<string> splitted;
+    std::string model_sha256 = "";
 
     aktparamgraph = trim(aktparamgraph);
 
@@ -358,6 +359,10 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
         if ((toUpper(splitted[0]) == "MODEL") && (splitted.size() > 1)) {
             this->cnnmodelfile = splitted[1];
         }
+
+        if (((toUpper(splitted[0]) == "MODEL_SHA256") || (toUpper(splitted[0]) == "MODELSHA256")) && (splitted.size() > 1)) {
+            model_sha256 = toLower(splitted[1]);
+        }
         
         if ((toUpper(splitted[0]) == "CNNGOODTHRESHOLD") && (splitted.size() > 1)) {
             if (isStringNumeric(splitted[1])) {
@@ -395,6 +400,23 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
             cnnmodelfile = active;
         } else {
             cnnmodelfile = "/models/model.tflite.gz";
+        }
+        model_sha256.clear();
+    } else {
+        // Deterministic model path: allow MODEL=<filename> + MODEL_SHA256=<64hex> (no URLs in config).
+        // If MODEL is a plain filename, store it under `/models/<sha>/<filename>` when sha is provided.
+        std::string model_value = cnnmodelfile;
+        if (!model_value.empty() && model_value[0] != '/') {
+            model_value = "/models/" + model_value;
+        }
+
+        if (!model_sha256.empty() && model_sha256.size() == 64) {
+            // Use basename part of model_value
+            size_t pos = model_value.find_last_of('/');
+            std::string filename = (pos == std::string::npos) ? model_value : model_value.substr(pos + 1);
+            cnnmodelfile = "/models/" + model_sha256 + "/" + filename;
+        } else {
+            cnnmodelfile = model_value;
         }
     }
 
